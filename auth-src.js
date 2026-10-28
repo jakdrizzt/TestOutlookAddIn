@@ -20,12 +20,13 @@ const AUTH_CONFIG = {
 let msalInstance = null;
 let dialogOperationSequence = 0;
 let currentAuthentication = null;
+let persistedBridgeRejectedThisRun = false;
 const AUTH_DIAGNOSTIC_KEY = "outlook-sogei-taskpane-auth-diagnostics";
 const MAX_AUTH_DIAGNOSTIC_EVENTS = 500;
 const STORAGE_PROBE_TASKPANE_KEY = "outlook-sogei-storage-probe-taskpane";
 const STORAGE_PROBE_DIALOG_KEY = "outlook-sogei-storage-probe-dialog";
 
-const AUTH_EXPERIMENT = "v0.1.18-mfa5-token-bridge";
+const AUTH_EXPERIMENT = "v0.1.18-mfa6-skip-expired-bridge-recovery";
 const AUTH_BRIDGE_KEY = "outlook-sogei-taskpane-auth-bridge";
 
 function readAuthDiagnostics() {
@@ -731,15 +732,34 @@ async function getAccessTokenSilently() {
   }
   const persistedAuthentication = readPersistedAuthentication();
   if (isAuthenticationUsable(persistedAuthentication)) {
+    persistedBridgeRejectedThisRun = false;
     currentAuthentication = persistedAuthentication;
     recordAuthDiagnostic("persisted_auth_reused", { expiresOn: persistedAuthentication.expiresOn || null });
     return currentAuthentication;
   }
-  if (persistedAuthentication) { clearPersistedAuthentication("notUsable"); }
+  if (persistedAuthentication) {
+    persistedBridgeRejectedThisRun = true;
+    recordAuthDiagnostic("persisted_auth_rejected_this_run", {
+      reason: "notUsable",
+      expiresOn: persistedAuthentication.expiresOn || null
+    });
+    clearPersistedAuthentication("notUsable");
+  }
 
   currentAuthentication = null;
   const authentication = await acquireTokenSilently();
-  if (authentication) return authentication;
+  if (authentication) {
+    persistedBridgeRejectedThisRun = false;
+    return authentication;
+  }
+  if (persistedBridgeRejectedThisRun) {
+    recordAuthDiagnostic("expired_bridge_skip_pre_recovery", {
+      experiment: AUTH_EXPERIMENT,
+      nextStep: "interactiveConnectPlugin"
+    });
+    persistedBridgeRejectedThisRun = false;
+    return connectPlugin();
+  }
   recordAuthDiagnostic("taskpane_silent_empty_recover_via_dialog");
   return recoverConnection();
 }
