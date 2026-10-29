@@ -697,6 +697,22 @@ function acquireTokenWithOfficeDialog(options = {}) {
                 count: dialog12006Count,
                 elapsedMs: Date.now() - dialogOpenedAt
               });
+                if (mode === "connect") {
+                  recordAuthDiagnostic("mfa12_12006_verify_via_dialog_b", {
+                    operationId,
+                    elapsedMs: Date.now() - dialogOpenedAt
+                  });
+                  completeWithError(
+                    createDialogError(
+                      "Dialog A terminato; verifica immediata tramite Dialog B.",
+                      {
+                        errorCode: "mfa12_12006_verify",
+                        authenticationPhase: "porkaroundBootstrap",
+                        dialogEvent: 12006
+                      }
+                    )
+                  );
+                }
             }
           }
         );
