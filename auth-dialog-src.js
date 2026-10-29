@@ -755,6 +755,30 @@ async function startAuthentication() {
     recordDiagnostic("recovery_silent_not_ready");
     throw error;
   }
+  if (DIALOG_MODE === "recovery-interactive") {
+    recordDiagnostic("mfa13_dialog_b_ready_for_interactive", {
+      officeContextPage,
+      hasMessageParent: typeof globalThis.Office?.context?.ui?.messageParent === "function"
+    });
+    recordDiagnostic("mfa13_dialog_a_popup_start", { scope: AUTH_CONFIG.scope });
+    try {
+      const popupResult = await client.acquireTokenPopup({
+        scopes: [AUTH_CONFIG.scope],
+        prompt: "select_account",
+        redirectUri: AUTH_CONFIG.redirectUri
+      });
+      recordDiagnostic("mfa13_dialog_a_popup_complete", {
+        tokenPresent: Boolean(popupResult?.accessToken),
+        username: popupResult?.account?.username || null
+      });
+      await sendTokenToParent(popupResult, "interactive-popup");
+      return;
+    } catch (popupError) {
+      recordDiagnostic("mfa13_dialog_a_popup_error", getSafeErrorDetails(popupError));
+      throw popupError;
+    }
+  }
+
   recordDiagnostic(
     "acquire_token_redirect_start",
     {
@@ -799,6 +823,12 @@ if (DIALOG_MODE === "reset") {
   const message = document.getElementById("auth-message");
   if (title) title.textContent = "Reset autenticazione";
   if (message) message.textContent = "Pulizia della cache di autenticazione del dialog in corso.";
+}
+if (DIALOG_MODE === "recovery-interactive") {
+  const title = document.getElementById("auth-title");
+  const message = document.getElementById("auth-message");
+  if (title) title.textContent = "Completamento connessione";
+  if (message) message.textContent = "Verifica della sessione attiva mentre viene completato l'accesso.";
 }
 if (DIALOG_MODE === "recovery") {
   const title = document.getElementById("auth-title");
