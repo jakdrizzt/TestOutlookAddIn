@@ -160,6 +160,26 @@ function runDialogStorageProbe() {
   });
 }
 
+async function resetDialogAuthenticationStorage() {
+  const keys = [];
+  for (let index = 0; index < localStorage.length; index += 1) {
+    const key = localStorage.key(index);
+    if (key) keys.push(key);
+  }
+  const removed = [];
+  for (const key of keys) {
+    const normalized = key.toLowerCase();
+    const isKnownAuthKey = key === PENDING_AUTH_KEY || key === OFFICE_DIALOG_URL_KEY;
+    const isMsalKey = normalized.startsWith("msal.") || normalized.includes(AUTH_CONFIG.clientId.toLowerCase());
+    if (isKnownAuthKey || isMsalKey) {
+      localStorage.removeItem(key);
+      removed.push(key);
+    }
+  }
+  recordDiagnostic("dialog_auth_storage_reset", { removedCount: removed.length });
+  await sendMessageToParent({ type: "auth-reset-complete", removedCount: removed.length });
+}
+
 function getSafeErrorDetails(error) {
   return {
     name:
@@ -569,6 +589,10 @@ async function startAuthentication() {
           .has("_host_Info")
     }
   );
+  if (DIALOG_MODE === "reset") {
+    await resetDialogAuthenticationStorage();
+    return;
+  }
   if (officeContextPage) {
     const pendingResult = readPendingAuthenticationResult();
     if (pendingResult?.accessToken) {
@@ -770,6 +794,12 @@ recordDiagnostic(
 );
 runDialogStorageProbe();
 
+if (DIALOG_MODE === "reset") {
+  const title = document.getElementById("auth-title");
+  const message = document.getElementById("auth-message");
+  if (title) title.textContent = "Reset autenticazione";
+  if (message) message.textContent = "Pulizia della cache di autenticazione del dialog in corso.";
+}
 if (DIALOG_MODE === "recovery") {
   const title = document.getElementById("auth-title");
   const message = document.getElementById("auth-message");

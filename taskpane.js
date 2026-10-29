@@ -200,15 +200,36 @@
     return;
   }
   window.WorkflowHealth.clearAuthenticationCache();
-  if (status) status.textContent = "Cache autenticazione svuotata.";
+  if (status) status.textContent = "Bridge auth svuotato.";
   resetHealthResult();
   refreshAuthDiagnostics();
+}
+async function resetAuthenticationCompletelyFromDiagnostics() {
+  const status = document.getElementById("auth-cache-clear-status");
+  const button = document.getElementById("auth-full-reset");
+  if (!window.WorkflowHealth?.resetAuthenticationCompletely) {
+    if (status) status.textContent = "API reset completo non disponibile.";
+    return;
+  }
+  if (button) button.disabled = true;
+  if (status) status.textContent = "Reset completo auth in corso...";
+  try {
+    const result = await window.WorkflowHealth.resetAuthenticationCompletely();
+    if (status) status.textContent = `Reset completo auth eseguito (${result?.removedCount || 0} chiavi dialog rimosse).`;
+    resetHealthResult();
+    refreshAuthDiagnostics();
+  } catch (error) {
+    if (status) status.textContent = `Reset completo auth non riuscito: ${error?.message || String(error)}`;
+  } finally {
+    if (button) button.disabled = false;
+  }
 }
 function registerAuthDiagnosticsControls() {
     document.getElementById("auth-diagnostics-refresh")?.addEventListener("click", refreshAuthDiagnostics);
     document.getElementById("auth-diagnostics-copy")?.addEventListener("click", copyAuthDiagnostics);
     document.getElementById("auth-diagnostics-clear")?.addEventListener("click", clearAuthDiagnostics);
       document.getElementById("auth-cache-clear")?.addEventListener("click", clearAuthenticationCacheFromDiagnostics);
+      document.getElementById("auth-full-reset")?.addEventListener("click", resetAuthenticationCompletelyFromDiagnostics);
     window.addEventListener("workflow-auth-diagnostics-changed", refreshAuthDiagnostics);
     refreshAuthDiagnostics();
   }

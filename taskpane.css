@@ -475,3 +475,7 @@ footer {
   .diagnostic-danger-button { border-color: #ffb3b8; color: #ffb3b8; }
   .diagnostic-danger-button:hover { background: #4a2023; }
 }
+
+/* MFA8: azioni reset auth affiancate. */
+.diagnostic-auth-button-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.diagnostic-auth-button-row .compact-button { min-width: 0; white-space: normal; }

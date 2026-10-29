@@ -138,6 +138,57 @@ function clearAuthenticationCache() {
   clearPersistedAuthentication("manualDiagnosticAction");
   recordAuthDiagnostic("manual_auth_cache_clear");
 }
+function resetDialogAuthenticationCache() {
+  recordAuthDiagnostic("full_auth_reset_dialog_start");
+  return new Promise((resolve, reject) => {
+    if (!window.Office?.context?.ui || typeof Office.context.ui.displayDialogAsync !== "function") {
+      reject(createDialogError("Office Dialog API non disponibile.", { errorCode: "office_dialog_not_available" }));
+      return;
+    }
+    Office.context.ui.displayDialogAsync(
+      `${AUTH_CONFIG.dialogUrl}?mode=reset`,
+      { height: 10, width: 10, displayInIframe: false, promptBeforeOpen: false },
+      (result) => {
+        if (result.status === Office.AsyncResultStatus.Failed) {
+          reject(createDialogError(result.error?.message || "Impossibile aprire il dialog reset.", { errorCode: result.error?.code || "dialog_reset_open_failed" }));
+          return;
+        }
+        const dialog = result.value;
+        let completed = false;
+        const finish = (callback) => {
+          if (completed) return;
+          completed = true;
+          try { dialog.close(); } catch {}
+          callback();
+        };
+        dialog.addEventHandler(Office.EventType.DialogMessageReceived, (event) => {
+          try {
+            const message = JSON.parse(event.message);
+            importDialogDiagnostics(message?.dialogDiagnostics);
+            if (message?.type === "auth-reset-complete") {
+              recordAuthDiagnostic("full_auth_reset_dialog_complete", { removedCount: message.removedCount || 0 });
+              finish(() => resolve(message));
+              return;
+            }
+            finish(() => reject(createDialogError(message?.message || "Reset dialog non completato.", { errorCode: message?.errorCode || "dialog_reset_failed" })));
+          } catch (error) { finish(() => reject(error)); }
+        });
+        dialog.addEventHandler(Office.EventType.DialogEventReceived, (event) => {
+          if (!completed) recordAuthDiagnostic("full_auth_reset_dialog_event", { error: event?.error || null });
+        });
+      }
+    );
+  });
+}
+
+async function resetAuthenticationCompletely() {
+  clearAuthenticationCache();
+  recordAuthDiagnostic("full_auth_reset_start");
+  const result = await resetDialogAuthenticationCache();
+  recordAuthDiagnostic("full_auth_reset_complete", { removedCount: result?.removedCount || 0 });
+  return result;
+}
+
 function importDialogDiagnostics(entries) {
   if (!Array.isArray(entries)) return;
 
@@ -840,4 +891,4 @@ async function callHealth() {
   }
   return { ok: response.ok, status: response.status, statusText: response.statusText, authenticationMode: authentication.acquisitionMode, body };
 }
-window.WorkflowHealth = { connectPlugin, recoverConnection, probeCurrentAuthentication, getAccessTokenSilently, callHealth, callHealthOnDemand, getDiagnostics: readAuthDiagnostics, clearDiagnostics: clearAuthDiagnostics, clearAuthenticationCache };
+window.WorkflowHealth = { connectPlugin, recoverConnection, probeCurrentAuthentication, getAccessTokenSilently, callHealth, callHealthOnDemand, getDiagnostics: readAuthDiagnostics, clearDiagnostics: clearAuthDiagnostics, clearAuthenticationCache, resetAuthenticationCompletely };
