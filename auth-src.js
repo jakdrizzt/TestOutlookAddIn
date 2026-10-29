@@ -376,19 +376,11 @@ async function acquireTokenSilently() {
 
 function acquireTokenWithOfficeDialog(options = {}) {
   const operationId = ++dialogOperationSequence;
-  const requestedMode = options.mode || "connect";
-  const mode = requestedMode === "recovery" || requestedMode === "recovery-interactive"
-    ? requestedMode
-    : "connect";
+  const mode = options.mode === "recovery" ? "recovery" : "connect";
   const forceCloseAfterMs = Number(options.forceCloseAfterMs || 0);
-  const dialogUrl = mode === "recovery"
-    ? `${AUTH_CONFIG.dialogUrl}?mode=recovery`
-    : mode === "recovery-interactive"
-      ? `${AUTH_CONFIG.dialogUrl}?mode=recovery-interactive`
-      : AUTH_CONFIG.dialogUrl;
-  const compactDialog = mode === "recovery" || mode === "recovery-interactive";
-  const dialogHeight = Number(options.height || (compactDialog ? 10 : 65));
-  const dialogWidth = Number(options.width || (compactDialog ? 10 : 45));
+  const dialogUrl = mode === "recovery" ? `${AUTH_CONFIG.dialogUrl}?mode=recovery` : AUTH_CONFIG.dialogUrl;
+  const dialogHeight = Number(options.height || (mode === "recovery" ? 10 : 65));
+  const dialogWidth = Number(options.width || (mode === "recovery" ? 10 : 45));
   recordAuthDiagnostic("display_dialog_start", { operationId, mode, forceCloseAfterMs, dialogHeight, dialogWidth });
 
   return new Promise((resolve, reject) => {
@@ -705,22 +697,6 @@ function acquireTokenWithOfficeDialog(options = {}) {
                 count: dialog12006Count,
                 elapsedMs: Date.now() - dialogOpenedAt
               });
-                if (mode === "connect") {
-                  recordAuthDiagnostic("mfa12_12006_verify_via_dialog_b", {
-                    operationId,
-                    elapsedMs: Date.now() - dialogOpenedAt
-                  });
-                  completeWithError(
-                    createDialogError(
-                      "Dialog A terminato; verifica immediata tramite Dialog B.",
-                      {
-                        errorCode: "mfa12_12006_verify",
-                        authenticationPhase: "porkaroundBootstrap",
-                        dialogEvent: 12006
-                      }
-                    )
-                  );
-                }
             }
           }
         );
@@ -853,20 +829,6 @@ async function connectPlugin() {
     return cached;
   }
 
-  recordAuthDiagnostic("mfa13_b_first_start", { mode: "recovery-interactive", height: 10, width: 10 });
-  try {
-    const bFirstResult = await acquireTokenWithOfficeDialog({
-      mode: "recovery-interactive", forceCloseAfterMs: 60000, height: 10, width: 10
-    });
-    recordAuthDiagnostic("mfa13_b_first_success", { acquisitionMode: bFirstResult?.acquisitionMode || null });
-    return bFirstResult;
-  } catch (bFirstError) {
-    recordAuthDiagnostic("mfa13_b_first_failed_fallback_legacy", {
-      errorCode: bFirstError?.errorCode || null,
-      message: bFirstError?.message || String(bFirstError)
-    });
-  }
-
   const interactiveWindowMs = 30000;
   recordAuthDiagnostic("single_interactive_start", { interactiveWindowMs });
   try {
@@ -876,12 +838,17 @@ async function connectPlugin() {
   } catch (error) {
     recordAuthDiagnostic("single_interactive_released", { errorCode: error?.errorCode || null, message: error?.message || String(error) });
   }
+
   recordAuthDiagnostic("persistent_recovery_start", { maxMs: 20000, height: 10, width: 10 });
-  const authentication = await acquireTokenWithOfficeDialog({ mode: "recovery", forceCloseAfterMs: 22000, height: 10, width: 10 });
+  const authentication = await acquireTokenWithOfficeDialog({
+    mode: "recovery",
+    forceCloseAfterMs: 22000,
+    height: 10,
+    width: 10
+  });
   recordAuthDiagnostic("persistent_recovery_success", { acquisitionMode: authentication?.acquisitionMode || null });
   return authentication;
 }
-
 async function callHealthOnDemand() {
   recordAuthDiagnostic("call_health_start");
 
