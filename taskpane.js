@@ -193,10 +193,22 @@
     if (status) status.textContent = "Diagnostica pulita.";
   }
 
-  function registerAuthDiagnosticsControls() {
+  function clearAuthenticationCacheFromDiagnostics() {
+  const status = document.getElementById("auth-cache-clear-status");
+  if (!window.WorkflowHealth?.clearAuthenticationCache) {
+    if (status) status.textContent = "API cache non disponibile.";
+    return;
+  }
+  window.WorkflowHealth.clearAuthenticationCache();
+  if (status) status.textContent = "Cache autenticazione svuotata.";
+  resetHealthResult();
+  refreshAuthDiagnostics();
+}
+function registerAuthDiagnosticsControls() {
     document.getElementById("auth-diagnostics-refresh")?.addEventListener("click", refreshAuthDiagnostics);
     document.getElementById("auth-diagnostics-copy")?.addEventListener("click", copyAuthDiagnostics);
     document.getElementById("auth-diagnostics-clear")?.addEventListener("click", clearAuthDiagnostics);
+      document.getElementById("auth-cache-clear")?.addEventListener("click", clearAuthenticationCacheFromDiagnostics);
     window.addEventListener("workflow-auth-diagnostics-changed", refreshAuthDiagnostics);
     refreshAuthDiagnostics();
   }

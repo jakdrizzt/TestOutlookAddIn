@@ -628,6 +628,16 @@ async function startAuthentication() {
   }
 
   if (redirectResult?.accessToken) {
+    recordDiagnostic("interactive_redirect_token_context", {
+      mode: DIALOG_MODE,
+      officeContextPage,
+      hasMessageParent: typeof globalThis.Office?.context?.ui?.messageParent === "function",
+      hasContext: Boolean(globalThis.Office?.context),
+      hasUi: Boolean(globalThis.Office?.context?.ui),
+      hostInfo: hasOfficeHostInfo(),
+      username: redirectResult.account?.username || null,
+      tokenLength: redirectResult.accessToken.length
+    });
     if (!officeContextPage) {
       recordDiagnostic("bootstrap_interactive_complete", { username: redirectResult.account?.username || null });
       savePendingAuthenticationResult(redirectResult, "interactive");

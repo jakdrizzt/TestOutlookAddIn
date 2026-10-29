@@ -465,3 +465,13 @@ footer {
 /* Health tecnico spostato nella sezione Diagnostica. */
 .diagnostic-health { margin-bottom: 10px; }
 .diagnostic-health .compact-button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; }
+
+/* Controlli diagnostici auth accanto al test connessione. */
+.diagnostic-auth-tools { display: grid; gap: 6px; margin: 0 0 8px; }
+.diagnostic-inline-status { margin-top: 0; }
+.diagnostic-danger-button { border-color: #a4262c; color: #a4262c; }
+.diagnostic-danger-button:hover { background: #fde7e9; }
+@media (prefers-color-scheme: dark) {
+  .diagnostic-danger-button { border-color: #ffb3b8; color: #ffb3b8; }
+  .diagnostic-danger-button:hover { background: #4a2023; }
+}

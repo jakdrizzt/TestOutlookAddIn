@@ -132,6 +132,12 @@ function clearPersistedAuthentication(reason = "unknown") {
   try { localStorage.removeItem(AUTH_BRIDGE_KEY); recordAuthDiagnostic("persisted_auth_cleared", { reason }); }
   catch (error) { recordAuthDiagnostic("persisted_auth_clear_error", { reason, name: error?.name || "Error", message: error?.message || String(error) }); }
 }
+function clearAuthenticationCache() {
+  currentAuthentication = null;
+  persistedBridgeRejectedThisRun = false;
+  clearPersistedAuthentication("manualDiagnosticAction");
+  recordAuthDiagnostic("manual_auth_cache_clear");
+}
 function importDialogDiagnostics(entries) {
   if (!Array.isArray(entries)) return;
 
@@ -834,4 +840,4 @@ async function callHealth() {
   }
   return { ok: response.ok, status: response.status, statusText: response.statusText, authenticationMode: authentication.acquisitionMode, body };
 }
-window.WorkflowHealth = { connectPlugin, recoverConnection, probeCurrentAuthentication, getAccessTokenSilently, callHealth, callHealthOnDemand, getDiagnostics: readAuthDiagnostics, clearDiagnostics: clearAuthDiagnostics };
+window.WorkflowHealth = { connectPlugin, recoverConnection, probeCurrentAuthentication, getAccessTokenSilently, callHealth, callHealthOnDemand, getDiagnostics: readAuthDiagnostics, clearDiagnostics: clearAuthDiagnostics, clearAuthenticationCache };
