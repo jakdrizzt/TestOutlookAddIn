@@ -262,11 +262,18 @@ function readPendingAuthenticationResult() {
   catch (error) { recordDiagnostic("pending_auth_read_error", getSafeErrorDetails(error)); return null; }
 }
 function clearPendingAuthenticationResult() { localStorage.removeItem(PENDING_AUTH_KEY); }
-function returnToOfficeDialogPage() {
-  const url = localStorage.getItem(OFFICE_DIALOG_URL_KEY);
-  if (!url) throw new Error("URL del dialogo Office non disponibile dopo il redirect MSAL.");
-  recordDiagnostic("return_to_office_dialog");
-  window.location.replace(url);
+function returnToOfficeDialogPage(mode = null) {
+  const savedUrl = localStorage.getItem(OFFICE_DIALOG_URL_KEY);
+  if (!savedUrl) throw new Error("URL del dialogo Office non disponibile dopo il redirect MSAL.");
+  const targetUrl = new URL(savedUrl);
+  if (mode) targetUrl.searchParams.set("mode", mode);
+  else targetUrl.searchParams.delete("mode");
+  targetUrl.hash = "";
+  recordDiagnostic("return_to_office_dialog", {
+    mode: mode || "connect",
+    hasHostInfo: targetUrl.searchParams.has("_host_Info")
+  });
+  window.location.replace(targetUrl.toString());
 }
 
 function recordOfficeState(checkpoint) {
@@ -593,11 +600,21 @@ async function startAuthentication() {
     await resetDialogAuthenticationStorage();
     return;
   }
+  if (DIALOG_MODE === "relay") {
+    recordDiagnostic("relay_mode_start", { officeContextPage });
+  }
   if (officeContextPage) {
     const pendingResult = readPendingAuthenticationResult();
     if (pendingResult?.accessToken) {
-      recordDiagnostic("pending_auth_found");
+      recordDiagnostic("pending_auth_found", { mode: DIALOG_MODE });
+      if (DIALOG_MODE === "relay") {
+        recordDiagnostic("relay_pending_token_found", {
+          username: pendingResult.account?.username || null,
+          tokenLength: pendingResult.accessToken.length
+        });
+      }
       await sendPendingTokenToParent(pendingResult);
+      if (DIALOG_MODE === "relay") recordDiagnostic("relay_complete");
       return;
     }
   }
@@ -662,13 +679,22 @@ async function startAuthentication() {
       username: redirectResult.account?.username || null,
       tokenLength: redirectResult.accessToken.length
     });
-    if (!officeContextPage) {
-      recordDiagnostic("bootstrap_interactive_complete", { username: redirectResult.account?.username || null });
+    const messageParentAvailable =
+      typeof globalThis.Office?.context?.ui?.messageParent === "function";
+    if (!messageParentAvailable) {
+      recordDiagnostic("interactive_token_relay_start", {
+        officeContextPage,
+        username: redirectResult.account?.username || null,
+        tokenLength: redirectResult.accessToken.length
+      });
       savePendingAuthenticationResult(redirectResult, "interactive");
-      recordDiagnostic("bootstrap_return_to_office_context");
-      returnToOfficeDialogPage();
+      recordDiagnostic("interactive_token_relay_navigation", {
+        targetMode: "relay"
+      });
+      returnToOfficeDialogPage("relay");
       return;
     }
+    recordDiagnostic("interactive_token_direct_parent_available");
     await sendTokenToParent(redirectResult, "interactive");
     return;
   }
@@ -799,6 +825,12 @@ if (DIALOG_MODE === "reset") {
   const message = document.getElementById("auth-message");
   if (title) title.textContent = "Reset autenticazione";
   if (message) message.textContent = "Pulizia della cache di autenticazione del dialog in corso.";
+}
+if (DIALOG_MODE === "relay") {
+  const title = document.getElementById("auth-title");
+  const message = document.getElementById("auth-message");
+  if (title) title.textContent = "Completamento accesso";
+  if (message) message.textContent = "Trasferimento sicuro del token al plugin in corso.";
 }
 if (DIALOG_MODE === "recovery") {
   const title = document.getElementById("auth-title");
