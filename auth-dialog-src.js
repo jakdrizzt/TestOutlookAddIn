@@ -2,11 +2,7 @@ import {
   PublicClientApplication
 } from "@azure/msal-browser";
 
-const RELAY_PENDING_KEY = "outlook-sogei-relay-pending";
-const REQUESTED_DIALOG_MODE = new URL(window.location.href).searchParams.get("mode") || "connect";
-const DIALOG_MODE = REQUESTED_DIALOG_MODE === "connect" && localStorage.getItem(RELAY_PENDING_KEY) === "1"
-  ? "relay"
-  : REQUESTED_DIALOG_MODE;
+const DIALOG_MODE = new URL(window.location.href).searchParams.get("mode") || "connect";
 const AUTH_CONFIG = {
   clientId:
     "17be48ae-1d05-4233-ba98-654102bf76e0",
@@ -173,7 +169,7 @@ async function resetDialogAuthenticationStorage() {
   const removed = [];
   for (const key of keys) {
     const normalized = key.toLowerCase();
-    const isKnownAuthKey = key === PENDING_AUTH_KEY || key === OFFICE_DIALOG_URL_KEY || key === RELAY_PENDING_KEY;
+    const isKnownAuthKey = key === PENDING_AUTH_KEY || key === OFFICE_DIALOG_URL_KEY;
     const isMsalKey = normalized.startsWith("msal.") || normalized.includes(AUTH_CONFIG.clientId.toLowerCase());
     if (isKnownAuthKey || isMsalKey) {
       localStorage.removeItem(key);
@@ -266,18 +262,13 @@ function readPendingAuthenticationResult() {
   catch (error) { recordDiagnostic("pending_auth_read_error", getSafeErrorDetails(error)); return null; }
 }
 function clearPendingAuthenticationResult() { localStorage.removeItem(PENDING_AUTH_KEY); }
-function returnToOfficeDialogPage(mode = null) {
-  const savedUrl = localStorage.getItem(OFFICE_DIALOG_URL_KEY);
-  if (!savedUrl) throw new Error("URL del dialogo Office non disponibile dopo il redirect MSAL.");
-  if (mode === "relay") localStorage.setItem(RELAY_PENDING_KEY, "1");
-  else localStorage.removeItem(RELAY_PENDING_KEY);
-  recordDiagnostic("return_to_office_dialog", {
-    mode: mode || "connect",
-    exactSavedUrl: true,
-    hasHostInfo: new URL(savedUrl).searchParams.has("_host_Info")
-  });
-  window.location.replace(savedUrl);
+function returnToOfficeDialogPage() {
+  const url = localStorage.getItem(OFFICE_DIALOG_URL_KEY);
+  if (!url) throw new Error("URL del dialogo Office non disponibile dopo il redirect MSAL.");
+  recordDiagnostic("return_to_office_dialog");
+  window.location.replace(url);
 }
+
 function recordOfficeState(checkpoint) {
   recordDiagnostic("office_state", {
     checkpoint,
@@ -602,24 +593,11 @@ async function startAuthentication() {
     await resetDialogAuthenticationStorage();
     return;
   }
-  if (DIALOG_MODE === "relay") {
-    recordDiagnostic("relay_mode_start", { officeContextPage, requestedMode: REQUESTED_DIALOG_MODE, exactSavedUrl: true });
-  }
   if (officeContextPage) {
     const pendingResult = readPendingAuthenticationResult();
     if (pendingResult?.accessToken) {
-      recordDiagnostic("pending_auth_found", { mode: DIALOG_MODE });
-      if (DIALOG_MODE === "relay") {
-        recordDiagnostic("relay_pending_token_found", {
-          username: pendingResult.account?.username || null,
-          tokenLength: pendingResult.accessToken.length
-        });
-      }
+      recordDiagnostic("pending_auth_found");
       await sendPendingTokenToParent(pendingResult);
-      if (DIALOG_MODE === "relay") {
-        localStorage.removeItem(RELAY_PENDING_KEY);
-        recordDiagnostic("relay_complete");
-      }
       return;
     }
   }
@@ -684,22 +662,13 @@ async function startAuthentication() {
       username: redirectResult.account?.username || null,
       tokenLength: redirectResult.accessToken.length
     });
-    const messageParentAvailable =
-      typeof globalThis.Office?.context?.ui?.messageParent === "function";
-    if (!messageParentAvailable) {
-      recordDiagnostic("interactive_token_relay_start", {
-        officeContextPage,
-        username: redirectResult.account?.username || null,
-        tokenLength: redirectResult.accessToken.length
-      });
+    if (!officeContextPage) {
+      recordDiagnostic("bootstrap_interactive_complete", { username: redirectResult.account?.username || null });
       savePendingAuthenticationResult(redirectResult, "interactive");
-      recordDiagnostic("interactive_token_relay_navigation", {
-        targetMode: "relay"
-      });
-      returnToOfficeDialogPage("relay");
+      recordDiagnostic("bootstrap_return_to_office_context");
+      returnToOfficeDialogPage();
       return;
     }
-    recordDiagnostic("interactive_token_direct_parent_available");
     await sendTokenToParent(redirectResult, "interactive");
     return;
   }
@@ -830,12 +799,6 @@ if (DIALOG_MODE === "reset") {
   const message = document.getElementById("auth-message");
   if (title) title.textContent = "Reset autenticazione";
   if (message) message.textContent = "Pulizia della cache di autenticazione del dialog in corso.";
-}
-if (DIALOG_MODE === "relay") {
-  const title = document.getElementById("auth-title");
-  const message = document.getElementById("auth-message");
-  if (title) title.textContent = "Completamento accesso";
-  if (message) message.textContent = "Trasferimento sicuro del token al plugin in corso.";
 }
 if (DIALOG_MODE === "recovery") {
   const title = document.getElementById("auth-title");

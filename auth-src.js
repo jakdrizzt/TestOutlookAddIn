@@ -697,22 +697,6 @@ function acquireTokenWithOfficeDialog(options = {}) {
                 count: dialog12006Count,
                 elapsedMs: Date.now() - dialogOpenedAt
               });
-                if (mode === "connect") {
-                  recordAuthDiagnostic("early_12006_release_to_recovery", {
-                    operationId,
-                    elapsedMs: Date.now() - dialogOpenedAt
-                  });
-                  completeWithError(
-                    createDialogError(
-                      "Dialog interattivo terminato; verifica immediata della sessione.",
-                      {
-                        errorCode: "early_12006_recovery",
-                        authenticationPhase: "porkaroundBootstrap",
-                        dialogEvent: 12006
-                      }
-                    )
-                  );
-                }
             }
           }
         );
