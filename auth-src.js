@@ -196,9 +196,14 @@ function importDialogDiagnostics(entries) {
   if (!Array.isArray(entries)) return;
 
   entries.slice(-60).forEach((entry) => {
+    const details = {
+      operationId: entry?.details?.operationId ?? null,
+      dialogMode: entry?.details?.dialogMode || null,
+      ...(entry?.details || {})
+    };
     recordAuthDiagnostic(
       entry.event || "dialog_event",
-      entry.details || null,
+      details,
       "DIALOG"
     );
   });
