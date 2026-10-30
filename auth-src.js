@@ -26,7 +26,7 @@ const MAX_AUTH_DIAGNOSTIC_EVENTS = 500;
 const STORAGE_PROBE_TASKPANE_KEY = "outlook-sogei-storage-probe-taskpane";
 const STORAGE_PROBE_DIALOG_KEY = "outlook-sogei-storage-probe-dialog";
 
-const AUTH_EXPERIMENT = "v0.1.20b-mfa17-post-12006-token-watch";
+const AUTH_EXPERIMENT = "v0.1.20b-mfa18-immediate-recovery-after-12006";
 const AUTH_BRIDGE_KEY = "outlook-sogei-taskpane-auth-bridge";
 const UI_PREFERENCES_KEY = "test-plugin-ui-preferences";
 function isDiagnosticsEnabled() { try { return Boolean(JSON.parse(localStorage.getItem(UI_PREFERENCES_KEY) || "{}").diagnosticsEnabled); } catch { return false; } }
@@ -712,9 +712,11 @@ function acquireTokenWithOfficeDialog(options = {}) {
                 elapsedMs: Date.now() - dialogOpenedAt
               });
               if (mode === "connect" && dialog12006Count === 1) {
-                void watchTokenAvailabilityAfter12006(operationId).catch((error) => {
-                  recordAuthDiagnostic("post_12006_watch_unhandled_error", { operationId, name: error?.name || "Error", errorCode: error?.errorCode || null, message: error?.message || String(error) });
-                });
+                recordAuthDiagnostic("post_12006_immediate_recovery_selected", { operationId, elapsedMs: Date.now() - dialogOpenedAt });
+                completeWithError(createDialogError(
+                  "Evento 12006 osservato; avvio immediato del recovery watcher.",
+                  { errorCode: "12006_immediate_recovery", authenticationPhase: "porkaround12006" }
+                ));
               }
             }
           }
@@ -725,38 +727,6 @@ function acquireTokenWithOfficeDialog(options = {}) {
 }
 
 function delay(milliseconds) { return new Promise((resolve) => setTimeout(resolve, milliseconds)); }
-async function watchTokenAvailabilityAfter12006(operationId, options = {}) {
-  const pollMs = Number(options.pollMs || 500);
-  const maxMs = Number(options.maxMs || 25000);
-  const startedAt = Date.now();
-  let attempt = 0;
-  recordAuthDiagnostic("post_12006_watch_start", { operationId, pollMs, maxMs });
-  while (Date.now() - startedAt < maxMs) {
-    attempt += 1;
-    try {
-      const client = await initializeMsal();
-      const accounts = client.getAllAccounts();
-      let tokenAvailable = false;
-      let tokenErrorCode = null;
-      if (accounts.length > 0) {
-        try {
-          const result = await client.acquireTokenSilent({ account: accounts[0], scopes: [AUTH_CONFIG.scope] });
-          tokenAvailable = Boolean(result?.accessToken);
-        } catch (error) { tokenErrorCode = error?.errorCode || error?.name || null; }
-      }
-      recordAuthDiagnostic("post_12006_watch_poll", { operationId, attempt, elapsedMs: Date.now() - startedAt, accountCount: accounts.length, tokenAvailable, tokenErrorCode });
-      if (tokenAvailable) {
-        recordAuthDiagnostic("post_12006_watch_token_detected", { operationId, attempt, elapsedMs: Date.now() - startedAt, accountCount: accounts.length });
-        return true;
-      }
-    } catch (error) {
-      recordAuthDiagnostic("post_12006_watch_error", { operationId, attempt, elapsedMs: Date.now() - startedAt, name: error?.name || "Error", errorCode: error?.errorCode || null, message: error?.message || String(error) });
-    }
-    await delay(pollMs);
-  }
-  recordAuthDiagnostic("post_12006_watch_end", { operationId, attempts: attempt, elapsedMs: Date.now() - startedAt, tokenDetected: false });
-  return false;
-}
 async function runRecoveryLoop(options = {}) {
   const retryDelayMs = Number(options.retryDelayMs || 1000);
   const openedRecoveryMaxMs = Number(options.openedRecoveryMaxMs || 20000);
