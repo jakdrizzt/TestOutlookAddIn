@@ -1066,8 +1066,6 @@ function registerHealthButton() {
       };
       logLookup("result_ready", { status: result.status, ok: result.ok, elapsedMs: Date.now() - lookupStartedAt });
       try { JSON.parse(body || "{}"); logLookup("json_parsed", { parsed: true }); } catch { logLookup("json_parsed", { parsed: false }); }
-      logLookup("result_ready", { status: result.status, ok: result.ok, elapsedMs: Date.now() - lookupStartedAt });
-      try { JSON.parse(body || "{}"); logLookup("json_parsed", { parsed: true }); } catch { logLookup("json_parsed", { parsed: false }); }
       console.info("GetTicketByConversationId:", {
         trigger: manual ? "manual" : "automatic",
         status: result.status,
