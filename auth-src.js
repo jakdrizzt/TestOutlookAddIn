@@ -26,7 +26,7 @@ const MAX_AUTH_DIAGNOSTIC_EVENTS = 500;
 const STORAGE_PROBE_TASKPANE_KEY = "outlook-sogei-storage-probe-taskpane";
 const STORAGE_PROBE_DIALOG_KEY = "outlook-sogei-storage-probe-dialog";
 
-const AUTH_EXPERIMENT = "v0.1.18-mfa6-skip-expired-bridge-recovery";
+const AUTH_EXPERIMENT = "v0.1.20b-mfa14-skip-empty-state-initial-recovery";
 const AUTH_BRIDGE_KEY = "outlook-sogei-taskpane-auth-bridge";
 const UI_PREFERENCES_KEY = "test-plugin-ui-preferences";
 function isDiagnosticsEnabled() { try { return Boolean(JSON.parse(localStorage.getItem(UI_PREFERENCES_KEY) || "{}").diagnosticsEnabled); } catch { return false; } }
@@ -310,7 +310,7 @@ async function acquireTokenSilently() {
   if (accounts.length === 0) {
     recordAuthDiagnostic("silent_accounts_empty", {
       experiment: AUTH_EXPERIMENT,
-      nextStep: "officeDialogRecovery"
+      nextStep: "interactiveConnectPlugin"
     });
     return null;
   }
@@ -811,6 +811,23 @@ async function getAccessTokenSilently() {
   if (authentication) {
     persistedBridgeRejectedThisRun = false;
     return authentication;
+  }
+  const silentAccountCount = msalInstance?.getAllAccounts?.().length || 0;
+  if (!persistedAuthentication && silentAccountCount === 0) {
+    recordAuthDiagnostic("zero_auth_state_detected", {
+      persistedAuthAvailable: false,
+      accountCount: silentAccountCount,
+      reason: "emptyStateAfterReset"
+    });
+    recordAuthDiagnostic("initial_recovery_skipped", {
+      experiment: AUTH_EXPERIMENT,
+      reason: "nothingToRecover"
+    });
+    recordAuthDiagnostic("interactive_auth_selected", {
+      experiment: AUTH_EXPERIMENT,
+      nextStep: "connectPlugin"
+    });
+    return connectPlugin();
   }
   if (persistedBridgeRejectedThisRun) {
     recordAuthDiagnostic("expired_bridge_skip_pre_recovery", {
