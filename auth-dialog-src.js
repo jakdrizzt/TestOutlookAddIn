@@ -23,6 +23,8 @@ const PENDING_AUTH_KEY = "outlook-sogei-pending-auth-result";
 const OFFICE_DIALOG_URL_KEY = "outlook-sogei-office-dialog-url";
 const STORAGE_PROBE_TASKPANE_KEY = "outlook-sogei-storage-probe-taskpane";
 const STORAGE_PROBE_DIALOG_KEY = "outlook-sogei-storage-probe-dialog";
+const UI_PREFERENCES_KEY = "test-plugin-ui-preferences";
+function isDiagnosticsEnabled() { try { return Boolean(JSON.parse(localStorage.getItem(UI_PREFERENCES_KEY) || "{}").diagnosticsEnabled); } catch { return false; } }
 
 let msalInstance = null;
 
@@ -95,6 +97,7 @@ function recordDiagnostic(
   event,
   details = null
 ) {
+  if (!isDiagnosticsEnabled()) return;
   const events =
     readDiagnosticEvents();
 

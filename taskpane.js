@@ -34,6 +34,11 @@
     localStorage.setItem(UI_PREFERENCES_KEY, JSON.stringify(preferences));
     refreshRoamingSettingsDiagnostics();
   }
+  function isDiagnosticsEnabled() { return Boolean(readUiPreferences().diagnosticsEnabled); }
+  function applyDiagnosticsVisibility() {
+    const enabled = isDiagnosticsEnabled();
+    document.querySelectorAll("[data-diagnostics-log-ui]").forEach((element) => { element.hidden = !enabled; });
+  }
   function isViewPersistenceEnabled() { return Boolean(readUiPreferences().persistSectionVisibility); }
   function readPersistedSectionState() {
     const value = readUiPreferences().persistedSectionState;
@@ -903,25 +908,31 @@ function registerHealthButton() {
   }
   function loadPluginSettings() {
     const checkbox = document.getElementById("persist-view-setting");
+    const diagnosticsCheckbox = document.getElementById("diagnostics-enabled-setting");
     if (checkbox) checkbox.checked = isViewPersistenceEnabled();
+    if (diagnosticsCheckbox) diagnosticsCheckbox.checked = isDiagnosticsEnabled();
     restorePersistedSectionState();
+    applyDiagnosticsVisibility();
     refreshRoamingSettingsDiagnostics();
   }
   function savePluginSettings() {
     const checkbox = document.getElementById("persist-view-setting"); const status = document.getElementById("settings-status");
     const enabled = Boolean(checkbox?.checked);
+    const diagnosticsEnabled = Boolean(document.getElementById("diagnostics-enabled-setting")?.checked);
     try {
       const preferences = readUiPreferences();
       preferences.persistSectionVisibility = enabled;
+      preferences.diagnosticsEnabled = diagnosticsEnabled;
       if (enabled) preferences.persistedSectionState = collectSectionState();
       else delete preferences.persistedSectionState;
       writeUiPreferences(preferences);
+      applyDiagnosticsVisibility();
       if (status) status.textContent = "Impostazione salvata.";
     } catch (error) {
       if (status) status.textContent = `Errore: ${error?.message || "salvataggio non riuscito"}`;
     }
   }
-  function registerPluginSettingsControls() { document.getElementById("persist-view-setting")?.addEventListener("change", savePluginSettings); loadPluginSettings(); }
+  function registerPluginSettingsControls() { document.getElementById("persist-view-setting")?.addEventListener("change", savePluginSettings); document.getElementById("diagnostics-enabled-setting")?.addEventListener("change", savePluginSettings); loadPluginSettings(); }
   const GET_TICKET_BY_CONVERSATION_ID_URL =
     "https://jakfunction-bzh9g2e6amhtdgff.italynorth-01.azurewebsites.net/api/GetTicketByConversationId";
 
@@ -1036,9 +1047,13 @@ function registerHealthButton() {
           Accept: "application/json"
         }
       });
+      clearTimeout(fetchPendingTimer);
+      logLookup("fetch_response_received", { status: fetchResponse.status, ok: fetchResponse.ok, elapsedMs: Date.now() - startedAt });
       const body = await fetchResponse.text();
+      logLookup("body_read", { elapsedMs: Date.now() - startedAt, bodyLength: body.length });
 
       if (sequence !== null && sequence !== loadSequence) {
+        logLookup("stale_result_ignored", { sequence, currentSequence: loadSequence });
         return null;
       }
 
@@ -1049,6 +1064,10 @@ function registerHealthButton() {
         authenticationMode: authentication.acquisitionMode,
         body
       };
+      logLookup("result_ready", { status: result.status, ok: result.ok, elapsedMs: Date.now() - lookupStartedAt });
+      try { JSON.parse(body || "{}"); logLookup("json_parsed", { parsed: true }); } catch { logLookup("json_parsed", { parsed: false }); }
+      logLookup("result_ready", { status: result.status, ok: result.ok, elapsedMs: Date.now() - lookupStartedAt });
+      try { JSON.parse(body || "{}"); logLookup("json_parsed", { parsed: true }); } catch { logLookup("json_parsed", { parsed: false }); }
       console.info("GetTicketByConversationId:", {
         trigger: manual ? "manual" : "automatic",
         status: result.status,
@@ -1058,6 +1077,7 @@ function registerHealthButton() {
         body: result.body
       });
       showTicketResult(result);
+      logLookup("ui_updated");
       logLookup("complete", { status: result.status, ok: result.ok, elapsedMs: Date.now() - lookupStartedAt });
       return result;
     } catch (error) {
@@ -1070,6 +1090,7 @@ function registerHealthButton() {
     } finally {
       if (sequence === null || sequence === loadSequence) {
         setTicketButtonLoading(false);
+        logLookup("loading_cleared", { elapsedMs: Date.now() - lookupStartedAt });
       }
     }
   }

@@ -28,6 +28,8 @@ const STORAGE_PROBE_DIALOG_KEY = "outlook-sogei-storage-probe-dialog";
 
 const AUTH_EXPERIMENT = "v0.1.18-mfa6-skip-expired-bridge-recovery";
 const AUTH_BRIDGE_KEY = "outlook-sogei-taskpane-auth-bridge";
+const UI_PREFERENCES_KEY = "test-plugin-ui-preferences";
+function isDiagnosticsEnabled() { try { return Boolean(JSON.parse(localStorage.getItem(UI_PREFERENCES_KEY) || "{}").diagnosticsEnabled); } catch { return false; } }
 
 function readAuthDiagnostics() {
   try {
@@ -48,6 +50,7 @@ function writeAuthDiagnostics(events) {
 }
 
 function recordAuthDiagnostic(event, details = null, source = "TASKPANE") {
+  if (!isDiagnosticsEnabled()) return;
   const events = readAuthDiagnostics();
   events.push({
     time: new Date().toLocaleTimeString("it-IT", { hour12: false }),
