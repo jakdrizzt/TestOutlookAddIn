@@ -1018,18 +1018,10 @@ function registerHealthButton() {
         logLookup("token_complete", { available: Boolean(authentication?.accessToken), authenticationMode: authentication?.acquisitionMode || null });
       } catch (silentError) {
         logLookup("token_error", { name: silentError?.name || "Error", errorCode: silentError?.errorCode || null, message: silentError?.message || String(silentError) });
-        console.info("GetTicketByConversationId: silent non disponibile, provo il flusso interattivo.", silentError);
-        if (!window.WorkflowHealth?.callHealthOnDemand) {
-          throw silentError;
-        }
-        logLookup("health_fallback_start");
-        const healthResult = await window.WorkflowHealth.callHealthOnDemand();
-        logLookup("health_fallback_complete", { status: healthResult?.status ?? null, ok: Boolean(healthResult?.ok) });
-        if (!healthResult?.ok) {
-          throw new Error(`Connessione alla Function App non riuscita (HTTP ${healthResult?.status ?? "?"}).`);
-        }
-        authentication = await window.WorkflowHealth.getAccessTokenSilently();
-        logLookup("token_after_health", { available: Boolean(authentication?.accessToken), authenticationMode: authentication?.acquisitionMode || null });
+        logLookup("auth_cycle_exhausted", { errorCode: silentError?.errorCode || null, message: silentError?.message || String(silentError) });
+        logLookup("health_fallback_skipped", { reason: "singleAuthCycleOnly" });
+        console.info("GetTicketByConversationId: primo ciclo autenticazione concluso senza token; nessun secondo ciclo automatico.", silentError);
+        throw silentError;
       }
 
       if (!authentication?.accessToken) {
