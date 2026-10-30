@@ -2,7 +2,15 @@ import {
   PublicClientApplication
 } from "@azure/msal-browser";
 
-const DIALOG_MODE = new URL(window.location.href).searchParams.get("mode") || "connect";
+const INITIAL_DIALOG_URL = new URL(window.location.href);
+const DIALOG_OPERATION_ID_KEY = "outlook-sogei-dialog-operation-id";
+const DIALOG_MODE_KEY = "outlook-sogei-dialog-operation-mode";
+const operationIdFromUrl = INITIAL_DIALOG_URL.searchParams.get("operationId");
+const modeFromUrl = INITIAL_DIALOG_URL.searchParams.get("mode");
+if (operationIdFromUrl) sessionStorage.setItem(DIALOG_OPERATION_ID_KEY, operationIdFromUrl);
+if (modeFromUrl) sessionStorage.setItem(DIALOG_MODE_KEY, modeFromUrl);
+const DIALOG_OPERATION_ID = operationIdFromUrl || sessionStorage.getItem(DIALOG_OPERATION_ID_KEY) || null;
+const DIALOG_MODE = modeFromUrl || sessionStorage.getItem(DIALOG_MODE_KEY) || "connect";
 const AUTH_CONFIG = {
   clientId:
     "17be48ae-1d05-4233-ba98-654102bf76e0",
@@ -108,7 +116,7 @@ function recordDiagnostic(
         { hour12: false }
       ),
     event,
-    details
+    details: { operationId: DIALOG_OPERATION_ID, dialogMode: DIALOG_MODE, ...(details || {}) }
   });
 
   writeDiagnosticEvents(events);
@@ -412,6 +420,8 @@ async function sendMessageToParent(message) {
   Office.context.ui.messageParent(
     JSON.stringify({
       ...message,
+      dialogOperationId: DIALOG_OPERATION_ID,
+      dialogMode: DIALOG_MODE,
       dialogDiagnostics: readDiagnosticEvents().slice(-500)
     })
   );
@@ -573,6 +583,7 @@ async function runPersistentRecovery(client) {
 }
 
 async function startAuthentication() {
+  recordDiagnostic("dialog_instance_start", { operationId: DIALOG_OPERATION_ID, dialogMode: DIALOG_MODE, pageHasHash: Boolean(window.location.hash), pageHasHostInfo: hasOfficeHostInfo() });
   const officeContextPage = hasOfficeHostInfo();
   if (officeContextPage) rememberOfficeDialogUrl();
 

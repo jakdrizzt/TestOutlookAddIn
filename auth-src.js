@@ -26,7 +26,7 @@ const MAX_AUTH_DIAGNOSTIC_EVENTS = 500;
 const STORAGE_PROBE_TASKPANE_KEY = "outlook-sogei-storage-probe-taskpane";
 const STORAGE_PROBE_DIALOG_KEY = "outlook-sogei-storage-probe-dialog";
 
-const AUTH_EXPERIMENT = "v0.1.20b-mfa14-skip-empty-state-initial-recovery";
+const AUTH_EXPERIMENT = "v0.1.20b-mfa15-dialog-correlation";
 const AUTH_BRIDGE_KEY = "outlook-sogei-taskpane-auth-bridge";
 const UI_PREFERENCES_KEY = "test-plugin-ui-preferences";
 function isDiagnosticsEnabled() { try { return Boolean(JSON.parse(localStorage.getItem(UI_PREFERENCES_KEY) || "{}").diagnosticsEnabled); } catch { return false; } }
@@ -381,7 +381,8 @@ function acquireTokenWithOfficeDialog(options = {}) {
   const operationId = ++dialogOperationSequence;
   const mode = options.mode === "recovery" ? "recovery" : "connect";
   const forceCloseAfterMs = Number(options.forceCloseAfterMs || 0);
-  const dialogUrl = mode === "recovery" ? `${AUTH_CONFIG.dialogUrl}?mode=recovery` : AUTH_CONFIG.dialogUrl;
+  const dialogUrlBase = mode === "recovery" ? `${AUTH_CONFIG.dialogUrl}?mode=recovery` : AUTH_CONFIG.dialogUrl;
+  const dialogUrl = `${dialogUrlBase}${dialogUrlBase.includes("?") ? "&" : "?"}operationId=${encodeURIComponent(operationId)}`;
   const dialogHeight = Number(options.height || (mode === "recovery" ? 10 : 65));
   const dialogWidth = Number(options.width || (mode === "recovery" ? 10 : 45));
   recordAuthDiagnostic("display_dialog_start", { operationId, mode, forceCloseAfterMs, dialogHeight, dialogWidth });
@@ -547,8 +548,13 @@ function acquireTokenWithOfficeDialog(options = {}) {
                 JSON.parse(event.message);
               recordAuthDiagnostic("dialog_message_received", {
                 operationId,
+                dialogOperationId: message?.dialogOperationId ?? null,
+                dialogMode: message?.dialogMode || null,
                 type: message?.type || null
               });
+              if (message?.dialogOperationId != null && String(message.dialogOperationId) !== String(operationId)) {
+                recordAuthDiagnostic("dialog_operation_mismatch", { operationId, dialogOperationId: message.dialogOperationId, dialogMode: message?.dialogMode || null });
+              }
               importDialogDiagnostics(message?.dialogDiagnostics);
             } catch {
               completeWithError(
