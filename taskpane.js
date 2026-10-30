@@ -22,30 +22,22 @@
   let currentHeaderText = "";
   let currentMessageContext = null;
   const messageContextListeners = new Set();
-  const VIEW_PERSISTENCE_KEY = "persistSectionVisibility";
-  const SECTION_STATE_KEY = "persistedSectionState";
+  const PLUGIN_PREFERENCES_KEY = "test-plugin-preferences";
+  const DEFAULT_PLUGIN_PREFERENCES = Object.freeze({ persistSectionVisibility: false, persistedSectionState: {} });
   const sectionIds = ["email-details", "settings", "diagnostics"];
-  function isViewPersistenceEnabled() { return Boolean(Office.context.roamingSettings.get(VIEW_PERSISTENCE_KEY)); }
-  function readPersistedSectionState() {
-    const value = Office.context.roamingSettings.get(SECTION_STATE_KEY);
-    return value && typeof value === "object" ? value : {};
+  function readPluginPreferences() {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(PLUGIN_PREFERENCES_KEY) || "{}");
+      return { ...DEFAULT_PLUGIN_PREFERENCES, ...(parsed && typeof parsed === "object" ? parsed : {}) };
+    } catch { return { ...DEFAULT_PLUGIN_PREFERENCES }; }
   }
-  function collectSectionState() {
-    return Object.fromEntries(sectionIds.map((name) => [
-      name,
-      document.getElementById(`${name}-toggle`)?.getAttribute("aria-expanded") === "true"
-    ]));
-  }
-  function saveRoamingSettings(callback) {
-    Office.context.roamingSettings.saveAsync((result) => {
-      refreshRoamingSettingsDiagnostics();
-      if (typeof callback === "function") callback(result);
-    });
-  }
+  function writePluginPreferences(preferences) { localStorage.setItem(PLUGIN_PREFERENCES_KEY, JSON.stringify(preferences)); refreshRoamingSettingsDiagnostics(); }
+  function isViewPersistenceEnabled() { return Boolean(readPluginPreferences().persistSectionVisibility); }
+  function readPersistedSectionState() { const value = readPluginPreferences().persistedSectionState; return value && typeof value === "object" ? value : {}; }
+  function collectSectionState() { return Object.fromEntries(sectionIds.map((name) => [name, document.getElementById(`${name}-toggle`)?.getAttribute("aria-expanded") === "true"])); }
   function saveSectionStateIfEnabled() {
     if (!isViewPersistenceEnabled()) return;
-    Office.context.roamingSettings.set(SECTION_STATE_KEY, collectSectionState());
-    saveRoamingSettings();
+    const preferences = readPluginPreferences(); preferences.persistedSectionState = collectSectionState(); writePluginPreferences(preferences);
   }
   function setSectionOpen(name, open, options = {}) {
     const button = document.getElementById(`${name}-toggle`); const panel = document.getElementById(`${name}-panel`);
@@ -811,13 +803,8 @@ function registerHealthButton() {
   }
 
   function refreshRoamingSettingsDiagnostics() {
-    const values = {
-      [VIEW_PERSISTENCE_KEY]: Office.context.roamingSettings.get(VIEW_PERSISTENCE_KEY),
-      [SECTION_STATE_KEY]: Office.context.roamingSettings.get(SECTION_STATE_KEY)
-    };
-    setText("diagnostic-roaming-settings", JSON.stringify(values, null, 2));
+    setText("diagnostic-roaming-settings", JSON.stringify({ storage: "localStorage", key: PLUGIN_PREFERENCES_KEY, ...readPluginPreferences() }, null, 2));
   }
-
   function loadDiagnostics() {
     const mailbox = Office.context && Office.context.mailbox;
     const diagnostics = mailbox && mailbox.diagnostics;
@@ -906,12 +893,13 @@ function registerHealthButton() {
   function savePluginSettings() {
     const checkbox = document.getElementById("persist-view-setting"); const status = document.getElementById("settings-status");
     const enabled = Boolean(checkbox?.checked);
-    Office.context.roamingSettings.set(VIEW_PERSISTENCE_KEY, enabled);
-    if (enabled) Office.context.roamingSettings.set(SECTION_STATE_KEY, collectSectionState());
-    else Office.context.roamingSettings.remove(SECTION_STATE_KEY);
-    saveRoamingSettings((result) => {
-      if (status) status.textContent = result.status === Office.AsyncResultStatus.Succeeded ? "Impostazione salvata." : `Errore: ${result.error?.message || "salvataggio non riuscito"}`;
-    });
+    try {
+      const preferences = readPluginPreferences();
+      preferences.persistSectionVisibility = enabled;
+      preferences.persistedSectionState = enabled ? collectSectionState() : {};
+      writePluginPreferences(preferences);
+      if (status) status.textContent = "Impostazione salvata in locale.";
+    } catch (error) { if (status) status.textContent = `Errore: ${error?.message || "salvataggio non riuscito"}`; }
   }
   function registerPluginSettingsControls() { document.getElementById("persist-view-setting")?.addEventListener("change", savePluginSettings); loadPluginSettings(); }
   const GET_TICKET_BY_CONVERSATION_ID_URL =
@@ -989,17 +977,23 @@ function registerHealthButton() {
 
       let authentication;
       try {
+        logLookup("token_request_start");
         authentication = await window.WorkflowHealth.getAccessTokenSilently();
+        logLookup("token_request_complete", { available: Boolean(authentication?.accessToken), acquisitionMode: authentication?.acquisitionMode || null });
       } catch (silentError) {
+        logLookup("token_request_error", { name: silentError?.name || "Error", errorCode: silentError?.errorCode || null, message: silentError?.message || String(silentError) });
         console.info("GetTicketByConversationId: silent non disponibile, provo il flusso interattivo.", silentError);
         if (!window.WorkflowHealth?.callHealthOnDemand) {
           throw silentError;
         }
+        logLookup("health_fallback_start");
         const healthResult = await window.WorkflowHealth.callHealthOnDemand();
+        logLookup("health_fallback_complete", { status: healthResult?.status ?? null, ok: Boolean(healthResult?.ok) });
         if (!healthResult?.ok) {
           throw new Error(`Connessione alla Function App non riuscita (HTTP ${healthResult?.status ?? "?"}).`);
         }
         authentication = await window.WorkflowHealth.getAccessTokenSilently();
+        logLookup("token_after_health_complete", { available: Boolean(authentication?.accessToken), acquisitionMode: authentication?.acquisitionMode || null });
       }
 
       if (!authentication?.accessToken) {
@@ -1008,14 +1002,13 @@ function registerHealthButton() {
 
       const url = `${GET_TICKET_BY_CONVERSATION_ID_URL}?conversationId=${encodeURIComponent(conversationId)}`;
       const startedAt = Date.now();
-      const fetchResponse = await fetch(url, {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${authentication.accessToken}`,
-          Accept: "application/json"
-        }
-      });
+      logLookup("fetch_start", { authenticationMode: authentication.acquisitionMode || null });
+      const slowWarningTimer = setTimeout(() => logLookup("fetch_pending", { elapsedMs: Date.now() - startedAt }), 10000);
+      let fetchResponse;
+      try { fetchResponse = await fetch(url, { method: "GET", headers: { Authorization: `Bearer ${authentication.accessToken}`, Accept: "application/json" } }); }
+      finally { clearTimeout(slowWarningTimer); }
       const body = await fetchResponse.text();
+      logLookup("fetch_complete", { status: fetchResponse.status, ok: fetchResponse.ok, elapsedMs: Date.now() - startedAt });
 
       if (sequence !== null && sequence !== loadSequence) {
         return null;
@@ -1037,10 +1030,12 @@ function registerHealthButton() {
         body: result.body
       });
       showTicketResult(result);
+      logLookup("complete", { status: result.status, ok: result.ok, elapsedMs: Date.now() - lookupStartedAt });
       return result;
     } catch (error) {
       if (sequence === null || sequence === loadSequence) {
         console.error("GetTicketByConversationId non riuscito:", error);
+        logLookup("error", { name: error?.name || "Error", errorCode: error?.errorCode || null, message: error?.message || String(error), elapsedMs: Date.now() - lookupStartedAt });
         showTicketError(error);
       }
       return null;

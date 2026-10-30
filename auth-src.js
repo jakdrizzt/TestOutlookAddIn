@@ -26,7 +26,7 @@ const MAX_AUTH_DIAGNOSTIC_EVENTS = 500;
 const STORAGE_PROBE_TASKPANE_KEY = "outlook-sogei-storage-probe-taskpane";
 const STORAGE_PROBE_DIALOG_KEY = "outlook-sogei-storage-probe-dialog";
 
-const AUTH_EXPERIMENT = "v0.1.18-mfa6-skip-expired-bridge-recovery";
+const AUTH_EXPERIMENT = "v0.1.19-mfa8-skip-expired-bridge-recovery";
 const AUTH_BRIDGE_KEY = "outlook-sogei-taskpane-auth-bridge";
 
 function readAuthDiagnostics() {
@@ -891,4 +891,4 @@ async function callHealth() {
   }
   return { ok: response.ok, status: response.status, statusText: response.statusText, authenticationMode: authentication.acquisitionMode, body };
 }
-window.WorkflowHealth = { connectPlugin, recoverConnection, probeCurrentAuthentication, getAccessTokenSilently, callHealth, callHealthOnDemand, getDiagnostics: readAuthDiagnostics, clearDiagnostics: clearAuthDiagnostics, clearAuthenticationCache, resetAuthenticationCompletely };
+window.WorkflowHealth = { connectPlugin, recoverConnection, probeCurrentAuthentication, getAccessTokenSilently, callHealth, callHealthOnDemand, getDiagnostics: readAuthDiagnostics, clearDiagnostics: clearAuthDiagnostics, recordDiagnostic: (event, details = null) => recordAuthDiagnostic(event, details, "TASKPANE"), clearAuthenticationCache, resetAuthenticationCompletely };
