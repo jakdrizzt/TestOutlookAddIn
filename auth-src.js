@@ -26,7 +26,7 @@ const MAX_AUTH_DIAGNOSTIC_EVENTS = 500;
 const STORAGE_PROBE_TASKPANE_KEY = "outlook-sogei-storage-probe-taskpane";
 const STORAGE_PROBE_DIALOG_KEY = "outlook-sogei-storage-probe-dialog";
 
-const AUTH_EXPERIMENT = "v0.1.20b-mfa18-immediate-recovery-after-12006";
+const AUTH_EXPERIMENT = "v0.1.20b-mfa19-b-before-a-concurrent";
 const AUTH_BRIDGE_KEY = "outlook-sogei-taskpane-auth-bridge";
 const UI_PREFERENCES_KEY = "test-plugin-ui-preferences";
 function isDiagnosticsEnabled() { try { return Boolean(JSON.parse(localStorage.getItem(UI_PREFERENCES_KEY) || "{}").diagnosticsEnabled); } catch { return false; } }
@@ -386,8 +386,10 @@ function acquireTokenWithOfficeDialog(options = {}) {
   const operationId = ++dialogOperationSequence;
   const mode = options.mode === "recovery" ? "recovery" : "connect";
   const forceCloseAfterMs = Number(options.forceCloseAfterMs || 0);
+  const recoveryMaxMs = Number(options.recoveryMaxMs || 0);
   const dialogUrlBase = mode === "recovery" ? `${AUTH_CONFIG.dialogUrl}?mode=recovery` : AUTH_CONFIG.dialogUrl;
-  const dialogUrl = `${dialogUrlBase}${dialogUrlBase.includes("?") ? "&" : "?"}operationId=${encodeURIComponent(operationId)}`;
+  const recoveryMaxQuery = mode === "recovery" && recoveryMaxMs > 0 ? `&recoveryMaxMs=${encodeURIComponent(recoveryMaxMs)}` : "";
+  const dialogUrl = `${dialogUrlBase}${dialogUrlBase.includes("?") ? "&" : "?"}operationId=${encodeURIComponent(operationId)}${recoveryMaxQuery}`;
   const dialogHeight = Number(options.height || (mode === "recovery" ? 10 : 65));
   const dialogWidth = Number(options.width || (mode === "recovery" ? 10 : 45));
   recordAuthDiagnostic("display_dialog_start", { operationId, mode, forceCloseAfterMs, dialogHeight, dialogWidth });
@@ -452,6 +454,7 @@ function acquireTokenWithOfficeDialog(options = {}) {
         let dialog12006Count = 0;
 
         recordAuthDiagnostic("display_dialog_success", { operationId });
+      if (typeof options.onOpened === "function") options.onOpened({ operationId, mode });
 
         let forcedCloseTimer = null;
         if (forceCloseAfterMs > 0) {
@@ -460,7 +463,7 @@ function acquireTokenWithOfficeDialog(options = {}) {
             forceCloseAfterMs
           });
           forcedCloseTimer = setTimeout(() => {
-            if (completed || operationId !== dialogOperationSequence) return;
+            if (completed) return;
             recordAuthDiagnostic("bootstrap_parent_close", {
               operationId,
               elapsedMs: Date.now() - dialogOpenedAt
@@ -507,7 +510,7 @@ function acquireTokenWithOfficeDialog(options = {}) {
         }
 
         function completeWithError(error) {
-          if (completed || operationId !== dialogOperationSequence) {
+          if (completed) {
             return;
           }
 
@@ -525,7 +528,7 @@ function acquireTokenWithOfficeDialog(options = {}) {
         }
 
         function completeWithToken(tokenResult) {
-          if (completed || operationId !== dialogOperationSequence) {
+          if (completed) {
             return;
           }
 
@@ -711,13 +714,7 @@ function acquireTokenWithOfficeDialog(options = {}) {
                 count: dialog12006Count,
                 elapsedMs: Date.now() - dialogOpenedAt
               });
-              if (mode === "connect" && dialog12006Count === 1) {
-                recordAuthDiagnostic("post_12006_immediate_recovery_selected", { operationId, elapsedMs: Date.now() - dialogOpenedAt });
-                completeWithError(createDialogError(
-                  "Evento 12006 osservato; avvio immediato del recovery watcher.",
-                  { errorCode: "12006_immediate_recovery", authenticationPhase: "porkaround12006" }
-                ));
-              }
+
             }
           }
         );
@@ -862,31 +859,37 @@ async function connectPlugin() {
   recordAuthDiagnostic("connect_plugin_start");
   currentAuthentication = null;
   const cached = await acquireTokenSilently();
-  if (cached) {
-    recordAuthDiagnostic("connect_plugin_silent_success");
-    return cached;
-  }
+  if (cached) { recordAuthDiagnostic("connect_plugin_silent_success"); return cached; }
 
-  const interactiveWindowMs = 30000;
-  recordAuthDiagnostic("single_interactive_start", { interactiveWindowMs });
-  try {
-    const directResult = await acquireTokenWithOfficeDialog({ mode: "connect", forceCloseAfterMs: interactiveWindowMs });
-    recordAuthDiagnostic("single_interactive_direct_success", { acquisitionMode: directResult?.acquisitionMode || null });
-    return directResult;
-  } catch (error) {
-    recordAuthDiagnostic("single_interactive_released", { errorCode: error?.errorCode || null, message: error?.message || String(error) });
-  }
-
-  recordAuthDiagnostic("persistent_recovery_start", { maxMs: 20000, height: 10, width: 10 });
-  const authentication = await acquireTokenWithOfficeDialog({
-    mode: "recovery",
-    forceCloseAfterMs: 22000,
-    height: 10,
-    width: 10
+  const watcherMaxMs = 5 * 60 * 1000;
+  recordAuthDiagnostic("concurrent_auth_start", { order: "B_then_A", watcherMaxMs });
+  let resolveWatcherOpened;
+  const watcherOpened = new Promise((resolve) => { resolveWatcherOpened = resolve; });
+  const watcherPromise = acquireTokenWithOfficeDialog({
+    mode: "recovery", forceCloseAfterMs: watcherMaxMs + 5000, recoveryMaxMs: watcherMaxMs, height: 10, width: 10,
+    onOpened: ({ operationId }) => { recordAuthDiagnostic("concurrent_B_opened", { operationId }); resolveWatcherOpened(operationId); }
   });
-  recordAuthDiagnostic("persistent_recovery_success", { acquisitionMode: authentication?.acquisitionMode || null });
-  return authentication;
+  const watcherOperationId = await Promise.race([
+    watcherOpened,
+    delay(5000).then(() => { throw createDialogError("Dialog B non aperto.", { errorCode: "B_open_timeout", authenticationPhase: "concurrentSetup" }); })
+  ]);
+  recordAuthDiagnostic("concurrent_B_confirmed_before_A", { watcherOperationId });
+
+  const interactivePromise = acquireTokenWithOfficeDialog({
+    mode: "connect", forceCloseAfterMs: 0,
+    onOpened: ({ operationId }) => recordAuthDiagnostic("concurrent_A_opened", { operationId, watcherOperationId })
+  });
+  try {
+    const authentication = await Promise.any([watcherPromise, interactivePromise]);
+    recordAuthDiagnostic("concurrent_auth_success", { acquisitionMode: authentication?.acquisitionMode || null });
+    return authentication;
+  } catch (aggregateError) {
+    const errors = aggregateError?.errors || [];
+    recordAuthDiagnostic("concurrent_auth_failed", { errorCount: errors.length, errors: errors.map((e) => `${e?.errorCode || e?.name || "Error"}:${e?.message || String(e)}`).join(" | ") });
+    throw errors[0] || aggregateError;
+  }
 }
+
 async function callHealthOnDemand() {
   recordAuthDiagnostic("call_health_start");
 

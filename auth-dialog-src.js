@@ -540,7 +540,8 @@ function recoveryDelay(milliseconds) {
 
 async function runPersistentRecovery(client) {
   const startedAt = Date.now();
-  const maxMs = 20000;
+  const requestedMaxMs = Number(INITIAL_DIALOG_URL.searchParams.get("recoveryMaxMs") || 0);
+  const maxMs = Number.isFinite(requestedMaxMs) && requestedMaxMs > 0 ? requestedMaxMs : 20000;
   const retryMs = 1000;
   let attempt = 0;
   recordDiagnostic("persistent_recovery_loop_start", { maxMs, retryMs });
@@ -576,7 +577,7 @@ async function runPersistentRecovery(client) {
     await recoveryDelay(retryMs);
   }
 
-  const error = new Error("Token silent non disponibile entro 20 secondi.");
+  const error = new Error(`Token silent non disponibile entro ${Math.round(maxMs / 1000)} secondi.`);
   error.errorCode = "silent_recovery_timeout";
   recordDiagnostic("persistent_recovery_timeout", { elapsedMs: Date.now() - startedAt, attempts: attempt });
   throw error;
