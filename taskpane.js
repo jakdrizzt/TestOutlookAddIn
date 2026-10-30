@@ -22,22 +22,34 @@
   let currentHeaderText = "";
   let currentMessageContext = null;
   const messageContextListeners = new Set();
-  const PLUGIN_PREFERENCES_KEY = "test-plugin-preferences";
-  const DEFAULT_PLUGIN_PREFERENCES = Object.freeze({ persistSectionVisibility: false, persistedSectionState: {} });
+  const UI_PREFERENCES_KEY = "test-plugin-ui-preferences";
   const sectionIds = ["email-details", "settings", "diagnostics"];
-  function readPluginPreferences() {
+  function readUiPreferences() {
     try {
-      const parsed = JSON.parse(localStorage.getItem(PLUGIN_PREFERENCES_KEY) || "{}");
-      return { ...DEFAULT_PLUGIN_PREFERENCES, ...(parsed && typeof parsed === "object" ? parsed : {}) };
-    } catch { return { ...DEFAULT_PLUGIN_PREFERENCES }; }
+      const parsed = JSON.parse(localStorage.getItem(UI_PREFERENCES_KEY) || "{}");
+      return parsed && typeof parsed === "object" ? parsed : {};
+    } catch { return {}; }
   }
-  function writePluginPreferences(preferences) { localStorage.setItem(PLUGIN_PREFERENCES_KEY, JSON.stringify(preferences)); refreshRoamingSettingsDiagnostics(); }
-  function isViewPersistenceEnabled() { return Boolean(readPluginPreferences().persistSectionVisibility); }
-  function readPersistedSectionState() { const value = readPluginPreferences().persistedSectionState; return value && typeof value === "object" ? value : {}; }
-  function collectSectionState() { return Object.fromEntries(sectionIds.map((name) => [name, document.getElementById(`${name}-toggle`)?.getAttribute("aria-expanded") === "true"])); }
+  function writeUiPreferences(preferences) {
+    localStorage.setItem(UI_PREFERENCES_KEY, JSON.stringify(preferences));
+    refreshRoamingSettingsDiagnostics();
+  }
+  function isViewPersistenceEnabled() { return Boolean(readUiPreferences().persistSectionVisibility); }
+  function readPersistedSectionState() {
+    const value = readUiPreferences().persistedSectionState;
+    return value && typeof value === "object" ? value : {};
+  }
+  function collectSectionState() {
+    return Object.fromEntries(sectionIds.map((name) => [
+      name,
+      document.getElementById(`${name}-toggle`)?.getAttribute("aria-expanded") === "true"
+    ]));
+  }
   function saveSectionStateIfEnabled() {
     if (!isViewPersistenceEnabled()) return;
-    const preferences = readPluginPreferences(); preferences.persistedSectionState = collectSectionState(); writePluginPreferences(preferences);
+    const preferences = readUiPreferences();
+    preferences.persistedSectionState = collectSectionState();
+    writeUiPreferences(preferences);
   }
   function setSectionOpen(name, open, options = {}) {
     const button = document.getElementById(`${name}-toggle`); const panel = document.getElementById(`${name}-panel`);
@@ -803,8 +815,13 @@ function registerHealthButton() {
   }
 
   function refreshRoamingSettingsDiagnostics() {
-    setText("diagnostic-roaming-settings", JSON.stringify({ storage: "localStorage", key: PLUGIN_PREFERENCES_KEY, ...readPluginPreferences() }, null, 2));
+    setText("diagnostic-roaming-settings", JSON.stringify({
+      storage: "localStorage",
+      key: UI_PREFERENCES_KEY,
+      ...readUiPreferences()
+    }, null, 2));
   }
+
   function loadDiagnostics() {
     const mailbox = Office.context && Office.context.mailbox;
     const diagnostics = mailbox && mailbox.diagnostics;
@@ -894,12 +911,15 @@ function registerHealthButton() {
     const checkbox = document.getElementById("persist-view-setting"); const status = document.getElementById("settings-status");
     const enabled = Boolean(checkbox?.checked);
     try {
-      const preferences = readPluginPreferences();
+      const preferences = readUiPreferences();
       preferences.persistSectionVisibility = enabled;
-      preferences.persistedSectionState = enabled ? collectSectionState() : {};
-      writePluginPreferences(preferences);
-      if (status) status.textContent = "Impostazione salvata in locale.";
-    } catch (error) { if (status) status.textContent = `Errore: ${error?.message || "salvataggio non riuscito"}`; }
+      if (enabled) preferences.persistedSectionState = collectSectionState();
+      else delete preferences.persistedSectionState;
+      writeUiPreferences(preferences);
+      if (status) status.textContent = "Impostazione salvata.";
+    } catch (error) {
+      if (status) status.textContent = `Errore: ${error?.message || "salvataggio non riuscito"}`;
+    }
   }
   function registerPluginSettingsControls() { document.getElementById("persist-view-setting")?.addEventListener("change", savePluginSettings); loadPluginSettings(); }
   const GET_TICKET_BY_CONVERSATION_ID_URL =
@@ -963,11 +983,16 @@ function registerHealthButton() {
 
   async function lookupTicket(options = {}) {
     const { sequence = null, manual = false } = options;
+    const lookupStartedAt = Date.now();
+    const lookupTrigger = manual ? "manual" : "automatic";
+    const logLookup = (event, details = null) => window.WorkflowHealth?.recordDiagnostic?.(`lookup_${event}`, { trigger: lookupTrigger, ...(details || {}) });
+    logLookup("start", { sequence });
     resetTicketResult();
     setTicketButtonLoading(true);
 
     try {
       const conversationId = currentMessageContext?.normalizedConversationId;
+      logLookup("conversation_id", { available: Boolean(conversationId) });
       if (!conversationId) {
         throw new Error("Conversation ID non disponibile per il messaggio selezionato.");
       }
@@ -977,11 +1002,11 @@ function registerHealthButton() {
 
       let authentication;
       try {
-        logLookup("token_request_start");
+        logLookup("token_start");
         authentication = await window.WorkflowHealth.getAccessTokenSilently();
-        logLookup("token_request_complete", { available: Boolean(authentication?.accessToken), acquisitionMode: authentication?.acquisitionMode || null });
+        logLookup("token_complete", { available: Boolean(authentication?.accessToken), authenticationMode: authentication?.acquisitionMode || null });
       } catch (silentError) {
-        logLookup("token_request_error", { name: silentError?.name || "Error", errorCode: silentError?.errorCode || null, message: silentError?.message || String(silentError) });
+        logLookup("token_error", { name: silentError?.name || "Error", errorCode: silentError?.errorCode || null, message: silentError?.message || String(silentError) });
         console.info("GetTicketByConversationId: silent non disponibile, provo il flusso interattivo.", silentError);
         if (!window.WorkflowHealth?.callHealthOnDemand) {
           throw silentError;
@@ -993,7 +1018,7 @@ function registerHealthButton() {
           throw new Error(`Connessione alla Function App non riuscita (HTTP ${healthResult?.status ?? "?"}).`);
         }
         authentication = await window.WorkflowHealth.getAccessTokenSilently();
-        logLookup("token_after_health_complete", { available: Boolean(authentication?.accessToken), acquisitionMode: authentication?.acquisitionMode || null });
+        logLookup("token_after_health", { available: Boolean(authentication?.accessToken), authenticationMode: authentication?.acquisitionMode || null });
       }
 
       if (!authentication?.accessToken) {
@@ -1003,12 +1028,15 @@ function registerHealthButton() {
       const url = `${GET_TICKET_BY_CONVERSATION_ID_URL}?conversationId=${encodeURIComponent(conversationId)}`;
       const startedAt = Date.now();
       logLookup("fetch_start", { authenticationMode: authentication.acquisitionMode || null });
-      const slowWarningTimer = setTimeout(() => logLookup("fetch_pending", { elapsedMs: Date.now() - startedAt }), 10000);
-      let fetchResponse;
-      try { fetchResponse = await fetch(url, { method: "GET", headers: { Authorization: `Bearer ${authentication.accessToken}`, Accept: "application/json" } }); }
-      finally { clearTimeout(slowWarningTimer); }
+      const fetchPendingTimer = setTimeout(() => logLookup("fetch_pending", { elapsedMs: Date.now() - startedAt }), 10000);
+      const fetchResponse = await fetch(url, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${authentication.accessToken}`,
+          Accept: "application/json"
+        }
+      });
       const body = await fetchResponse.text();
-      logLookup("fetch_complete", { status: fetchResponse.status, ok: fetchResponse.ok, elapsedMs: Date.now() - startedAt });
 
       if (sequence !== null && sequence !== loadSequence) {
         return null;
@@ -1033,9 +1061,9 @@ function registerHealthButton() {
       logLookup("complete", { status: result.status, ok: result.ok, elapsedMs: Date.now() - lookupStartedAt });
       return result;
     } catch (error) {
+      logLookup("error", { name: error?.name || "Error", errorCode: error?.errorCode || null, message: error?.message || String(error), elapsedMs: Date.now() - lookupStartedAt });
       if (sequence === null || sequence === loadSequence) {
         console.error("GetTicketByConversationId non riuscito:", error);
-        logLookup("error", { name: error?.name || "Error", errorCode: error?.errorCode || null, message: error?.message || String(error), elapsedMs: Date.now() - lookupStartedAt });
         showTicketError(error);
       }
       return null;

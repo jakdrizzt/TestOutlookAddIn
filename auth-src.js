@@ -26,7 +26,7 @@ const MAX_AUTH_DIAGNOSTIC_EVENTS = 500;
 const STORAGE_PROBE_TASKPANE_KEY = "outlook-sogei-storage-probe-taskpane";
 const STORAGE_PROBE_DIALOG_KEY = "outlook-sogei-storage-probe-dialog";
 
-const AUTH_EXPERIMENT = "v0.1.19-mfa8-skip-expired-bridge-recovery";
+const AUTH_EXPERIMENT = "v0.1.18-mfa6-skip-expired-bridge-recovery";
 const AUTH_BRIDGE_KEY = "outlook-sogei-taskpane-auth-bridge";
 
 function readAuthDiagnostics() {
