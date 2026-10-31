@@ -1,3 +1,4 @@
+// Test-Plugin file version: 0.2-auth-src.js-1
 import {
   PublicClientApplication
 } from "@azure/msal-browser";
@@ -26,7 +27,7 @@ const MAX_AUTH_DIAGNOSTIC_EVENTS = 500;
 const STORAGE_PROBE_TASKPANE_KEY = "outlook-sogei-storage-probe-taskpane";
 const STORAGE_PROBE_DIALOG_KEY = "outlook-sogei-storage-probe-dialog";
 
-const AUTH_EXPERIMENT = "v0.1.21-mfa23-popup-cancel-cleanup";
+const AUTH_FLOW = "popup-redirect-bridge";
 const AUTH_BRIDGE_KEY = "outlook-sogei-taskpane-auth-bridge";
 const UI_PREFERENCES_KEY = "test-plugin-ui-preferences";
 function isDiagnosticsEnabled() { try { return Boolean(JSON.parse(localStorage.getItem(UI_PREFERENCES_KEY) || "{}").diagnosticsEnabled); } catch { return false; } }
@@ -244,7 +245,7 @@ async function initializeMsal() {
 
   runTaskpaneStorageProbe();
   recordAuthDiagnostic("auth_experiment_loaded", {
-    experiment: AUTH_EXPERIMENT
+    flow: AUTH_FLOW
   });
   recordAuthDiagnostic("msal_initialize_start");
 
@@ -314,7 +315,7 @@ async function acquireTokenSilently() {
 
   if (accounts.length === 0) {
     recordAuthDiagnostic("silent_accounts_empty", {
-      experiment: AUTH_EXPERIMENT,
+      flow: AUTH_FLOW,
       nextStep: "interactiveConnectPlugin"
     });
     return null;
@@ -716,33 +717,6 @@ function acquireTokenWithOfficeDialog(options = {}) {
   });
 }
 
-function delay(milliseconds) { return new Promise((resolve) => setTimeout(resolve, milliseconds)); }
-async function runRecoveryLoop(options = {}) {
-  const retryDelayMs = Number(options.retryDelayMs || 1000);
-  const openedRecoveryMaxMs = Number(options.openedRecoveryMaxMs || 20000);
-  const waitForDialogRelease = options.waitForDialogRelease !== false;
-  let recoveryWindowStartedAt = null;
-  let attempt = 0;
-  recordAuthDiagnostic("recovery_watcher_start", { retryDelayMs, openedRecoveryMaxMs, waitForDialogRelease });
-  while (true) {
-    attempt += 1;
-    recordAuthDiagnostic("recovery_attempt", { attempt });
-    try {
-      const authentication = await acquireTokenWithOfficeDialog({ mode: "recovery", forceCloseAfterMs: 3000 });
-      recordAuthDiagnostic("recovery_success", { attempt, acquisitionMode: authentication?.acquisitionMode || null });
-      return authentication;
-    } catch (error) {
-      const dialogBusy = error?.authenticationPhase === "displayDialogAsync";
-      recordAuthDiagnostic("recovery_attempt_failed", { attempt, dialogBusy, errorCode: error?.errorCode || null, message: error?.message || String(error) });
-      if (dialogBusy && waitForDialogRelease) { await delay(retryDelayMs); continue; }
-      if (recoveryWindowStartedAt === null) { recoveryWindowStartedAt = Date.now(); recordAuthDiagnostic("recovery_window_started"); }
-      if (Date.now() - recoveryWindowStartedAt >= openedRecoveryMaxMs) {
-        throw createDialogError("Token non recuperabile entro la finestra di recovery di 20 secondi.", { errorCode: "recovery_timeout", authenticationPhase: "silentRecovery" });
-      }
-      await delay(retryDelayMs);
-    }
-  }
-}
 async function recoverConnection() {
   recordAuthDiagnostic("recover_connection_start", { mode: "persistent-small-dialog" });
   try {
@@ -828,18 +802,18 @@ async function getAccessTokenSilently() {
       reason: "emptyStateAfterReset"
     });
     recordAuthDiagnostic("initial_recovery_skipped", {
-      experiment: AUTH_EXPERIMENT,
+      flow: AUTH_FLOW,
       reason: "nothingToRecover"
     });
     recordAuthDiagnostic("interactive_auth_selected", {
-      experiment: AUTH_EXPERIMENT,
+      flow: AUTH_FLOW,
       nextStep: "connectPlugin"
     });
     return connectPlugin();
   }
   if (persistedBridgeRejectedThisRun) {
     recordAuthDiagnostic("expired_bridge_skip_pre_recovery", {
-      experiment: AUTH_EXPERIMENT,
+      flow: AUTH_FLOW,
       nextStep: "interactiveConnectPlugin"
     });
     persistedBridgeRejectedThisRun = false;
@@ -924,4 +898,4 @@ async function callHealth() {
   }
   return { ok: response.ok, status: response.status, statusText: response.statusText, authenticationMode: authentication.acquisitionMode, body };
 }
-window.WorkflowHealth = { connectPlugin, recoverConnection, probeCurrentAuthentication, getAccessTokenSilently, callHealth, callHealthOnDemand, getDiagnostics: readAuthDiagnostics, clearDiagnostics: clearAuthDiagnostics, recordDiagnostic: (event, details = null) => recordAuthDiagnostic(event, details, "TASKPANE"), clearAuthenticationCache, resetAuthenticationCompletely };
+window.WorkflowHealth = { connectPlugin, recoverConnection, probeCurrentAuthentication, getAccessTokenSilently, callHealth, callHealthOnDemand, getDiagnostics: readAuthDiagnostics, clearDiagnostics: clearAuthDiagnostics, recordDiagnostic: (event, details = null) => recordAuthDiagnostic(event, details, "TASKPANE"), resetAuthenticationCompletely };

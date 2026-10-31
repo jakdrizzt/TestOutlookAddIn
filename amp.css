@@ -1,3 +1,4 @@
+/* Test-Plugin file version: 0.2-amp.css-1 */
 .amp-page { display: grid; gap: 12px; }
 .amp-toolbar { display: grid; grid-template-columns: 1fr; gap: 8px; }
 .amp-card h2 { margin: 0 0 8px; }

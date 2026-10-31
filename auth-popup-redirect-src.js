@@ -1,3 +1,4 @@
+// Test-Plugin file version: 0.2-auth-popup-redirect-src.js-1
 import { broadcastResponseToMainFrame } from "@azure/msal-browser/redirect-bridge";
 
 (async () => {

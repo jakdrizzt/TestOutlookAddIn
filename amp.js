@@ -1,3 +1,4 @@
+// Test-Plugin file version: 0.2-amp.js-1
 (() => {
   "use strict";
 
@@ -32,7 +33,7 @@
     if (!response.ok) throw new Error(`Impossibile caricare amp-view.html (${response.status}).`);
     view.innerHTML = await response.text();
     byId("amp-back-button")?.addEventListener("click", () => window.TestPluginAPI?.showMainView?.());
-byId("open-amp-button")?.addEventListener("click", show);
+    byId("open-amp-button")?.addEventListener("click", show);
     state.unsubscribe = window.TestPluginAPI?.onMessageChanged?.(renderContext) || null;
     state.initialized = true;
   }

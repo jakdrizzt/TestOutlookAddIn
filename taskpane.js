@@ -1,3 +1,23 @@
+// Test-Plugin file version: 0.2-taskpane.js-1
+const TEST_PLUGIN_BUILD = Object.freeze({
+  application: '0.2',
+  release: '0.2-initial',
+  files: Object.freeze({
+    'taskpane.html': '0.2-taskpane.html-1',
+    'taskpane.js': '0.2-taskpane.js-1',
+    'taskpane.css': '0.2-taskpane.css-1',
+    'auth-src.js': '0.2-auth-src.js-1',
+    'auth-dialog.html': '0.2-auth-dialog.html-1',
+    'auth-dialog-src.js': '0.2-auth-dialog-src.js-1',
+    'auth-popup-redirect.html': '0.2-auth-popup-redirect.html-1',
+    'auth-popup-redirect-src.js': '0.2-auth-popup-redirect-src.js-1',
+    'amp.js': '0.2-amp.js-1',
+    'amp.css': '0.2-amp.css-1',
+    'amp-view.html': '0.2-amp-view.html-1'
+  }),
+  generated: Object.freeze(["auth.bundle.js", "auth-dialog.bundle.js", "auth-popup-redirect.bundle.js"])
+});
+window.TestPluginBuild = TEST_PLUGIN_BUILD;
 (() => {
   "use strict";
 
@@ -165,14 +185,9 @@
     const events = window.WorkflowHealth?.getDiagnostics?.() || [];
     const lastEvent = events.at(-1)?.event || "nessuno";
 
-    const summary = [
-      `WorkflowHealth disponibile: ${workflowHealthAvailable}`,
-      `API diagnostica disponibile: ${diagnosticsApiAvailable}`,
-      `Eventi locali: ${events.length}`,
-      `Ultimo evento: ${lastEvent}`,
-      ""
-    ].join("\n");
-
+    const build = window.TestPluginBuild;
+    const componentLines = build?.files ? Object.entries(build.files).map(([name, version]) => `- ${name}: ${version}`) : ["- Non disponibili"];
+    const summary = [`Test-Plugin: ${build?.application || "Non disponibile"}`, `Release: ${build?.release || "Non disponibile"}`, "Componenti:", ...componentLines, "", `WorkflowHealth disponibile: ${workflowHealthAvailable}`, `API diagnostica disponibile: ${diagnosticsApiAvailable}`, `Eventi locali: ${events.length}`, `Ultimo evento: ${lastEvent}`, ""].join("\n");
     output.textContent = events.length
       ? summary + events.map(formatAuthDiagnosticEntry).join("\n")
       : summary + "Nessun evento registrato.";
@@ -202,19 +217,8 @@
     if (status) status.textContent = "Diagnostica pulita.";
   }
 
-  function clearAuthenticationCacheFromDiagnostics() {
-  const status = document.getElementById("auth-cache-clear-status");
-  if (!window.WorkflowHealth?.clearAuthenticationCache) {
-    if (status) status.textContent = "API cache non disponibile.";
-    return;
-  }
-  window.WorkflowHealth.clearAuthenticationCache();
-  if (status) status.textContent = "Bridge auth svuotato.";
-  resetHealthResult();
-  refreshAuthDiagnostics();
-}
-async function resetAuthenticationCompletelyFromDiagnostics() {
-  const status = document.getElementById("auth-cache-clear-status");
+  async function resetAuthenticationCompletelyFromDiagnostics() {
+  const status = document.getElementById("auth-reset-status");
   const button = document.getElementById("auth-full-reset");
   if (!window.WorkflowHealth?.resetAuthenticationCompletely) {
     if (status) status.textContent = "API reset completo non disponibile.";
@@ -237,7 +241,6 @@ function registerAuthDiagnosticsControls() {
     document.getElementById("auth-diagnostics-refresh")?.addEventListener("click", refreshAuthDiagnostics);
     document.getElementById("auth-diagnostics-copy")?.addEventListener("click", copyAuthDiagnostics);
     document.getElementById("auth-diagnostics-clear")?.addEventListener("click", clearAuthDiagnostics);
-      document.getElementById("auth-cache-clear")?.addEventListener("click", clearAuthenticationCacheFromDiagnostics);
       document.getElementById("auth-full-reset")?.addEventListener("click", resetAuthenticationCompletelyFromDiagnostics);
     window.addEventListener("workflow-auth-diagnostics-changed", refreshAuthDiagnostics);
     refreshAuthDiagnostics();
@@ -827,6 +830,13 @@ function registerHealthButton() {
     }, null, 2));
   }
 
+  function loadBuildVersions() {
+    const build = window.TestPluginBuild;
+    setText("plugin-version", build?.application ? `v.${build.application}` : "", "Versione non disponibile");
+    const lines = build?.files ? [`Applicazione: ${build.application}`, `Release: ${build.release}`, ...Object.entries(build.files).map(([name, version]) => `${name}: ${version}`), "Bundle generati:", ...(build.generated || []).map((name) => `${name}: generato`)] : [];
+    setText("diagnostic-component-versions", lines.join("\n"));
+    window.WorkflowHealth?.recordDiagnostic?.("component_versions_loaded", { application: build?.application || null, release: build?.release || null, files: build?.files ? JSON.stringify(build.files) : null });
+  }
   function loadDiagnostics() {
     const mailbox = Office.context && Office.context.mailbox;
     const diagnostics = mailbox && mailbox.diagnostics;
@@ -1210,7 +1220,7 @@ function registerHealthButton() {
   }
 
   window.TestPluginAPI = Object.freeze({
-    version: "1.0.0",
+    version: window.TestPluginBuild?.application || "0.2",
     getCurrentMessageContext,
     onMessageChanged,
     showMainView

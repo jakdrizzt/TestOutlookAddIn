@@ -1,3 +1,4 @@
+// Test-Plugin file version: 0.2-auth-dialog-src.js-1
 import {
   PublicClientApplication
 } from "@azure/msal-browser";
