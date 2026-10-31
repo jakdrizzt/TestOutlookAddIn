@@ -488,6 +488,7 @@ async function initializeMsal() {
   recordDiagnostic(
     "msal_initialize_start"
   );
+  recordDiagnostic("msal_origin_check_configured", { originCheck: false, requiredMsalMajor: 5 });
 
   msalInstance =
     new PublicClientApplication({
@@ -499,6 +500,8 @@ async function initializeMsal() {
         redirectUri:
           AUTH_CONFIG.redirectUri,
         navigateToLoginRequestUrl:
+          false,
+        originCheck:
           false
       },
       cache: {
