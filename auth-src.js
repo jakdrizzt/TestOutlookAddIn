@@ -26,7 +26,7 @@ const MAX_AUTH_DIAGNOSTIC_EVENTS = 500;
 const STORAGE_PROBE_TASKPANE_KEY = "outlook-sogei-storage-probe-taskpane";
 const STORAGE_PROBE_DIALOG_KEY = "outlook-sogei-storage-probe-dialog";
 
-const AUTH_EXPERIMENT = "v0.1.21-mfa22-popup-redirect-bridge";
+const AUTH_EXPERIMENT = "v0.1.21-mfa23-popup-cancel-cleanup";
 const AUTH_BRIDGE_KEY = "outlook-sogei-taskpane-auth-bridge";
 const UI_PREFERENCES_KEY = "test-plugin-ui-preferences";
 function isDiagnosticsEnabled() { try { return Boolean(JSON.parse(localStorage.getItem(UI_PREFERENCES_KEY) || "{}").diagnosticsEnabled); } catch { return false; } }
@@ -864,7 +864,12 @@ async function connectPlugin() {
     recordAuthDiagnostic("single_interactive_direct_success", { acquisitionMode: directResult?.acquisitionMode || null });
     return directResult;
   } catch (error) {
-    recordAuthDiagnostic("single_interactive_released", { errorCode: error?.errorCode || null, message: error?.message || String(error) });
+    const errorCode = error?.errorCode || null;
+    recordAuthDiagnostic("single_interactive_released", { errorCode, message: error?.message || String(error) });
+    if (["user_cancelled", "timed_out"].includes(String(errorCode || ""))) {
+      recordAuthDiagnostic("popup_terminal_error_stop", { errorCode, reason: "noRecoveryForPopupCancellation" });
+      throw error;
+    }
   }
 
   recordAuthDiagnostic("persistent_recovery_start", { maxMs: 20000, height: 10, width: 10 });

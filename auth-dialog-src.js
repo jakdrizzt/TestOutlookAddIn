@@ -586,10 +586,12 @@ async function runPersistentRecovery(client) {
 
 function setPopupUi(state, message = null) {
   const button = document.getElementById("start-popup-auth");
+  const cancelButton = document.getElementById("cancel-popup-auth");
   const spinner = document.getElementById("auth-spinner");
   const messageElement = document.getElementById("auth-message");
   const waiting = state === "waiting"; const running = state === "running";
-  if (button) { button.hidden = !waiting && !running; button.disabled = running; button.textContent = running ? "Accesso in corso..." : "Accedi a SOGEI"; }
+  if (button) { button.hidden = !waiting; button.disabled = false; button.textContent = "Accedi a SOGEI"; }
+  if (cancelButton) cancelButton.hidden = !running;
   if (spinner) spinner.hidden = !running;
   if (messageElement && message) messageElement.textContent = message;
 }
@@ -599,15 +601,39 @@ function waitForPopupUserGesture(client) {
   const button = document.getElementById("start-popup-auth");
   if (!button) return Promise.reject(new Error("Pulsante di accesso popup non disponibile."));
   return new Promise((resolve, reject) => {
+    const cancelButton = document.getElementById("cancel-popup-auth");
+    let popupStarted = false;
+    let settled = false;
+    if (cancelButton) cancelButton.addEventListener("click", async () => {
+      if (!popupStarted || settled) return;
+      settled = true;
+      const cancelError = new Error("Accesso annullato dall'utente.");
+      cancelError.name = "PopupAuthenticationCancelled";
+      cancelError.errorCode = "user_cancelled";
+      recordDiagnostic("popup_cancel_button_clicked");
+      try {
+        await sendErrorToParent(cancelError, "popupUserCancellation");
+        recordDiagnostic("popup_cancel_sent_to_parent");
+      } catch (messageError) {
+        recordDiagnostic("popup_cancel_parent_error", getSafeErrorDetails(messageError));
+      }
+      reject(cancelError);
+    });
     button.addEventListener("click", async () => {
+      if (popupStarted || settled) return;
+      popupStarted = true;
       setPopupUi("running", "Completa l'accesso nella finestra Microsoft aperta.");
       recordDiagnostic("acquire_token_popup_start", { redirectUri: AUTH_CONFIG.popupRedirectUri, scope: AUTH_CONFIG.scope, bridgeMode: true });
       try {
         const result = await client.acquireTokenPopup({ scopes: [AUTH_CONFIG.scope], redirectUri: AUTH_CONFIG.popupRedirectUri, prompt: "select_account" });
         recordDiagnostic("acquire_token_popup_complete", { tokenPresent: Boolean(result?.accessToken), username: result?.account?.username || null });
+        if (settled) { recordDiagnostic("acquire_token_popup_late_result_ignored"); return; }
+        settled = true;
         resolve(result);
       } catch (error) {
         recordDiagnostic("acquire_token_popup_error", getSafeErrorDetails(error));
+        if (settled) { recordDiagnostic("acquire_token_popup_late_error_ignored", getSafeErrorDetails(error)); return; }
+        settled = true;
         setPopupUi("waiting", "Accesso non completato. Chiudi la finestra e riprova dal plugin.");
         reject(error);
       }
