@@ -26,7 +26,7 @@ const MAX_AUTH_DIAGNOSTIC_EVENTS = 500;
 const STORAGE_PROBE_TASKPANE_KEY = "outlook-sogei-storage-probe-taskpane";
 const STORAGE_PROBE_DIALOG_KEY = "outlook-sogei-storage-probe-dialog";
 
-const AUTH_EXPERIMENT = "v0.1.21-mfa20-msal5-origincheck-false";
+const AUTH_EXPERIMENT = "v0.1.21-mfa21-popup-inside-dialog";
 const AUTH_BRIDGE_KEY = "outlook-sogei-taskpane-auth-bridge";
 const UI_PREFERENCES_KEY = "test-plugin-ui-preferences";
 function isDiagnosticsEnabled() { try { return Boolean(JSON.parse(localStorage.getItem(UI_PREFERENCES_KEY) || "{}").diagnosticsEnabled); } catch { return false; } }
@@ -247,7 +247,6 @@ async function initializeMsal() {
     experiment: AUTH_EXPERIMENT
   });
   recordAuthDiagnostic("msal_initialize_start");
-  recordAuthDiagnostic("msal_origin_check_configured", { originCheck: false, requiredMsalMajor: 5 });
 
   msalInstance =
     new PublicClientApplication({
@@ -259,8 +258,6 @@ async function initializeMsal() {
         redirectUri:
           AUTH_CONFIG.redirectUri,
         navigateToLoginRequestUrl:
-          false,
-        originCheck:
           false
       },
       cache: {
@@ -709,12 +706,8 @@ function acquireTokenWithOfficeDialog(options = {}) {
 
             if (event?.error === 12006) {
               dialog12006Count += 1;
-              recordAuthDiagnostic("porkaround_12006_observed", {
-                operationId,
-                count: dialog12006Count,
-                elapsedMs: Date.now() - dialogOpenedAt
-              });
-
+              recordAuthDiagnostic("popup_dialog_closed_by_user", { operationId, count: dialog12006Count, elapsedMs: Date.now() - dialogOpenedAt });
+              completeWithError(createDialogError("Finestra di autenticazione chiusa dall'utente.", { errorCode: "user_cancelled", authenticationPhase: "popupOfficeDialog", dialogEvent: 12006 }));
             }
           }
         );
@@ -864,8 +857,8 @@ async function connectPlugin() {
     return cached;
   }
 
-  const interactiveWindowMs = 30000;
-  recordAuthDiagnostic("single_interactive_start", { interactiveWindowMs });
+  const interactiveWindowMs = 0;
+  recordAuthDiagnostic("single_interactive_start", { interactiveWindowMs, mode: "popupInsideDialog" });
   try {
     const directResult = await acquireTokenWithOfficeDialog({ mode: "connect", forceCloseAfterMs: interactiveWindowMs });
     recordAuthDiagnostic("single_interactive_direct_success", { acquisitionMode: directResult?.acquisitionMode || null });

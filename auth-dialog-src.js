@@ -488,7 +488,6 @@ async function initializeMsal() {
   recordDiagnostic(
     "msal_initialize_start"
   );
-  recordDiagnostic("msal_origin_check_configured", { originCheck: false, requiredMsalMajor: 5 });
 
   msalInstance =
     new PublicClientApplication({
@@ -500,8 +499,6 @@ async function initializeMsal() {
         redirectUri:
           AUTH_CONFIG.redirectUri,
         navigateToLoginRequestUrl:
-          false,
-        originCheck:
           false
       },
       cache: {
@@ -583,6 +580,37 @@ async function runPersistentRecovery(client) {
   error.errorCode = "silent_recovery_timeout";
   recordDiagnostic("persistent_recovery_timeout", { elapsedMs: Date.now() - startedAt, attempts: attempt });
   throw error;
+}
+
+function setPopupUi(state, message = null) {
+  const button = document.getElementById("start-popup-auth");
+  const spinner = document.getElementById("auth-spinner");
+  const messageElement = document.getElementById("auth-message");
+  const waiting = state === "waiting"; const running = state === "running";
+  if (button) { button.hidden = !waiting && !running; button.disabled = running; button.textContent = running ? "Accesso in corso..." : "Accedi a SOGEI"; }
+  if (spinner) spinner.hidden = !running;
+  if (messageElement && message) messageElement.textContent = message;
+}
+function waitForPopupUserGesture(client) {
+  setPopupUi("waiting", "Premi Accedi a SOGEI, quindi seleziona l'account e completa l'eventuale verifica MFA.");
+  recordDiagnostic("popup_user_gesture_required", { redirectUri: AUTH_CONFIG.redirectUri });
+  const button = document.getElementById("start-popup-auth");
+  if (!button) return Promise.reject(new Error("Pulsante di accesso popup non disponibile."));
+  return new Promise((resolve, reject) => {
+    button.addEventListener("click", async () => {
+      setPopupUi("running", "Completa l'accesso nella finestra Microsoft aperta.");
+      recordDiagnostic("acquire_token_popup_start", { redirectUri: AUTH_CONFIG.redirectUri, scope: AUTH_CONFIG.scope });
+      try {
+        const result = await client.acquireTokenPopup({ scopes: [AUTH_CONFIG.scope], redirectUri: AUTH_CONFIG.redirectUri, prompt: "select_account" });
+        recordDiagnostic("acquire_token_popup_complete", { tokenPresent: Boolean(result?.accessToken), username: result?.account?.username || null });
+        resolve(result);
+      } catch (error) {
+        recordDiagnostic("acquire_token_popup_error", getSafeErrorDetails(error));
+        setPopupUi("waiting", "Accesso non completato. Chiudi la finestra e riprova dal plugin.");
+        reject(error);
+      }
+    }, { once: true });
+  });
 }
 
 async function startAuthentication() {
@@ -772,28 +800,12 @@ async function startAuthentication() {
     recordDiagnostic("recovery_silent_not_ready");
     throw error;
   }
-  recordDiagnostic(
-    "acquire_token_redirect_start",
-    {
-      redirectUri:
-        AUTH_CONFIG.redirectUri,
-      scope:
-        AUTH_CONFIG.scope
-    }
-  );
-
-  recordOfficeState("before_acquire_token_redirect");
-  probeOfficeReady("before_acquire_token_redirect");
-
-  await client.acquireTokenRedirect({
-    scopes: [
-      AUTH_CONFIG.scope
-    ],
-    redirectUri:
-      AUTH_CONFIG.redirectUri,
-    prompt:
-      "select_account"
-  });
+  recordDiagnostic("popup_auth_selected", { redirectUri: AUTH_CONFIG.redirectUri, scope: AUTH_CONFIG.scope });
+  recordOfficeState("before_acquire_token_popup");
+  probeOfficeReady("before_acquire_token_popup");
+  const popupResult = await waitForPopupUserGesture(client);
+  if (!popupResult?.accessToken) throw new Error("MSAL popup non ha restituito un access token.");
+  await sendTokenToParent(popupResult, "interactive-popup");
 }
 
 if (document.readyState === "loading") {
@@ -809,6 +821,7 @@ if (document.readyState === "loading") {
 recordDiagnostic(
   "bundle_loaded"
 );
+if (DIALOG_MODE === "connect") setPopupUi("waiting");
 runDialogStorageProbe();
 
 if (DIALOG_MODE === "reset") {
