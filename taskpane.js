@@ -1,10 +1,10 @@
-// Test-Plugin file version: 0.2-taskpane.js-1
+// Test-Plugin file version: 0.2-taskpane.js-2
 const TEST_PLUGIN_BUILD = Object.freeze({
   application: '0.2',
   release: '0.2-initial',
   files: Object.freeze({
     'taskpane.html': '0.2-taskpane.html-1',
-    'taskpane.js': '0.2-taskpane.js-1',
+    'taskpane.js': '0.2-taskpane.js-2',
     'taskpane.css': '0.2-taskpane.css-1',
     'auth-src.js': '0.2-auth-src.js-1',
     'auth-dialog.html': '0.2-auth-dialog.html-1',
@@ -1237,6 +1237,7 @@ function registerHealthButton() {
     registerHealthButton();
     registerTicketTestControls();
     registerAuthDiagnosticsControls();
+    loadBuildVersions();
     loadDiagnostics();
     registerPluginSettingsControls();
     registerHeaderViewControls();
