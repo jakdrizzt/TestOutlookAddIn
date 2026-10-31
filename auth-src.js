@@ -26,7 +26,7 @@ const MAX_AUTH_DIAGNOSTIC_EVENTS = 500;
 const STORAGE_PROBE_TASKPANE_KEY = "outlook-sogei-storage-probe-taskpane";
 const STORAGE_PROBE_DIALOG_KEY = "outlook-sogei-storage-probe-dialog";
 
-const AUTH_EXPERIMENT = "v0.1.21-mfa21-popup-inside-dialog";
+const AUTH_EXPERIMENT = "v0.1.21-mfa22-popup-redirect-bridge";
 const AUTH_BRIDGE_KEY = "outlook-sogei-taskpane-auth-bridge";
 const UI_PREFERENCES_KEY = "test-plugin-ui-preferences";
 function isDiagnosticsEnabled() { try { return Boolean(JSON.parse(localStorage.getItem(UI_PREFERENCES_KEY) || "{}").diagnosticsEnabled); } catch { return false; } }

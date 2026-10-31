@@ -19,7 +19,9 @@ const AUTH_CONFIG = {
   scope:
     "api://17be48ae-1d05-4233-ba98-654102bf76e0/Workflow.Access",
   redirectUri:
-    "https://jakdrizzt.github.io/TestOutlookAddIn/auth-dialog.html"
+    "https://jakdrizzt.github.io/TestOutlookAddIn/auth-dialog.html",
+  popupRedirectUri:
+    "https://jakdrizzt.github.io/TestOutlookAddIn/auth-popup-redirect.html"
 };
 
 const DIAGNOSTIC_KEY =
@@ -593,15 +595,15 @@ function setPopupUi(state, message = null) {
 }
 function waitForPopupUserGesture(client) {
   setPopupUi("waiting", "Premi Accedi a SOGEI, quindi seleziona l'account e completa l'eventuale verifica MFA.");
-  recordDiagnostic("popup_user_gesture_required", { redirectUri: AUTH_CONFIG.redirectUri });
+  recordDiagnostic("popup_user_gesture_required", { redirectUri: AUTH_CONFIG.popupRedirectUri, bridgeMode: true });
   const button = document.getElementById("start-popup-auth");
   if (!button) return Promise.reject(new Error("Pulsante di accesso popup non disponibile."));
   return new Promise((resolve, reject) => {
     button.addEventListener("click", async () => {
       setPopupUi("running", "Completa l'accesso nella finestra Microsoft aperta.");
-      recordDiagnostic("acquire_token_popup_start", { redirectUri: AUTH_CONFIG.redirectUri, scope: AUTH_CONFIG.scope });
+      recordDiagnostic("acquire_token_popup_start", { redirectUri: AUTH_CONFIG.popupRedirectUri, scope: AUTH_CONFIG.scope, bridgeMode: true });
       try {
-        const result = await client.acquireTokenPopup({ scopes: [AUTH_CONFIG.scope], redirectUri: AUTH_CONFIG.redirectUri, prompt: "select_account" });
+        const result = await client.acquireTokenPopup({ scopes: [AUTH_CONFIG.scope], redirectUri: AUTH_CONFIG.popupRedirectUri, prompt: "select_account" });
         recordDiagnostic("acquire_token_popup_complete", { tokenPresent: Boolean(result?.accessToken), username: result?.account?.username || null });
         resolve(result);
       } catch (error) {
@@ -800,7 +802,7 @@ async function startAuthentication() {
     recordDiagnostic("recovery_silent_not_ready");
     throw error;
   }
-  recordDiagnostic("popup_auth_selected", { redirectUri: AUTH_CONFIG.redirectUri, scope: AUTH_CONFIG.scope });
+  recordDiagnostic("popup_auth_selected", { redirectUri: AUTH_CONFIG.popupRedirectUri, scope: AUTH_CONFIG.scope, bridgeMode: true });
   recordOfficeState("before_acquire_token_popup");
   probeOfficeReady("before_acquire_token_popup");
   const popupResult = await waitForPopupUserGesture(client);
